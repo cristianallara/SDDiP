@@ -73,7 +73,7 @@ def read_data(database_file, stages, n_stage):
                     L_max_s[t, n] = L_max_scenario['R'][t]
                 elif m == 'H':
                     L_max_s[t, n] = L_max_scenario['H'][t]
-    globals () ["L_max_s"] = L_max_s
+    globals()["L_max_s"] = L_max_s
     print('finished loading data')
 
 

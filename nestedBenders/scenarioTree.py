@@ -38,13 +38,12 @@ def create_scenario_tree(stages, scenarios, single_prob):
         nodes.extend(n_stage[i])
     g.add_nodes_from(nodes)
 
-    sc_nodes = {}
+    sc_nodes = collections.OrderedDict()
     for n in n_stage[stages[-1]]:
         sc_nodes[n] = [n]
         for s in reversed(stages):
             pn = parent_node[sc_nodes[n][-1]]
             sc_nodes[n].append(pn)
-    globals()['sc_nodes'] = sc_nodes
     # print(sc_nodes)
     print('finished creating scenario tree')
     print('number of scenarios:', len(n_stage[stages[-1]]))
