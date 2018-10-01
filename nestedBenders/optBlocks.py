@@ -449,7 +449,7 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
 
         b.fut_cost = ConstraintList()
 
-    m.Bl = Block(m.n_stage, rule=planning_block_rule)  # TODO: this is the line that generate the blocks
+    m.Bl = Block(m.n_stage, rule=planning_block_rule)
 
     # Decomposition Parameters
     m.ngo_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True)

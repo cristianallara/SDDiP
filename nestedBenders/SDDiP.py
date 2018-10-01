@@ -25,9 +25,9 @@ scenarios = ['L', 'R', 'H']
 single_prob = {'L': 0.25, 'R': 0.5, 'H': 0.25}
 
 # Define parameters of the decomposition
-max_iter = 2
+max_iter = 3
 opt_tol = 1  # %
-ns = 5  # Number of scenarios solved per Forward/Backward Pass
+ns = 10  # Number of scenarios solved per Forward/Backward Pass
 # NOTE: ns should be between 1 and len(n_stage[time_periods])
 z_alpha_2 = 1.96  # 95% confidence level
 
@@ -54,10 +54,35 @@ m.cost_LB = Param(m.iter, default=0, initialize=0, mutable=True)
 m.gap = Param(m.iter, default=0, initialize=0, mutable=True)
 scenarios_iter = {}
 
+# converting sets to lists:
+rn_r = list(m.rn_r)
+th_r = list(m.th_r)
+
 # Retrieve duals
 for t in m.t:
     for n in n_stage[t]:
         m.Bl[t, n].dual = Suffix(direction=Suffix.IMPORT)
+
+# Add equality constraints
+for t in m.t:
+    for n in n_stage[t]:
+        if t != 1:
+            for (rn, r) in m.rn_r:
+                for pn in n_stage[t - 1]:
+                    if pn in parent_node[n]:
+                        m.Bl[t, n].link_equal1.add(expr=(m.Bl[t, n].ngo_rn_prev[rn, r] ==
+                                                         m.ngo_rn_par[rn, r, t - 1, pn]))
+                        if t > readData.LT[rn]:
+                            m.Bl[t, n].link_equal3.add(expr=(m.Bl[t, n].ngb_rn_LT[rn, r] ==
+                                                             m.ngb_rn_par[rn, r, t - m.LT[rn], pn]))
+            for (th, r) in m.th_r:
+                for pn in n_stage[t - 1]:
+                    if pn in parent_node[n]:
+                        m.Bl[t, n].link_equal2.add(expr=(m.Bl[t, n].ngo_th_prev[th, r] ==
+                                                         m.ngo_th_par[th, r, t - 1, pn]))
+                        if t > readData.LT[th]:
+                            m.Bl[t, n].link_equal4.add(expr=(m.Bl[t, n].ngb_th_LT[th, r] ==
+                                                             m.ngo_th_par[th, r, t - m.LT[th], pn]))
 
 # Stochastic Dual Dynamic integer Programming Algorithm (SDDiP)
 for iter_ in m.iter:
@@ -71,45 +96,33 @@ for iter_ in m.iter:
         n = sc_headers[i]
         sampled_scenarios[n] = sc_nodes[n]
         scenarios_iter[iter_][n] = list(sampled_scenarios[n])
-    print(sampled_scenarios)
+    # print(sampled_scenarios)
     for t in m.t:
         for n in list(sampled_scenarios.keys()):
-            k = sampled_scenarios[n][len(m.t) - t]
-            if k not in sampled_nodes:
-                sampled_nodes.append(k)
+            s_sc = sampled_scenarios[n][len(m.t) - t]
+            if s_sc not in sampled_nodes:
+                sampled_nodes.append(s_sc)
             sampled_nodes_stage[t] = sampled_nodes
         sampled_nodes = []
 
-    # Forward Pass
+    expl_nodes = {}
+    for n in nodes:
+        expl_nodes[n] = 0
 
+    # Forward Pass
     for t in m.t:
         for n in sampled_nodes_stage[t]:
             print("Time period", t)
             print("Current Node", n)
+            expl_nodes[n] = 1
 
             # Fix alphafut=0 for iter 1
             if iter_ == 1:
                 m.Bl[t, n].alphafut.fix(0)
-
-            # add equality linking with parental nodes for stages =/= 1
-            if iter_ == 1:
-                if t != 1:
-                    for (rn, r) in m.rn_r:
-                        for pn in n_stage[t - 1]:
-                            if pn in parent_node[n]:
-                                m.Bl[t, n].link_equal1.add(expr=(m.Bl[t, n].ngo_rn_prev[rn, r] ==
-                                                                 m.ngo_rn_par[rn, r, t - 1, pn]))
-                                if t > readData.LT[rn]:
-                                    m.Bl[t, n].link_equal3.add(expr=(m.Bl[t, n].ngb_rn_LT[rn, r] ==
-                                                                     m.ngb_rn_par[rn, r, t - m.LT[rn], pn]))
-                    for (th, r) in m.th_r:
-                        for pn in n_stage[t - 1]:
-                            if pn in parent_node[n]:
-                                m.Bl[t, n].link_equal2.add(expr=(m.Bl[t, n].ngo_th_prev[th, r] ==
-                                                                 m.ngo_th_par[th, r, t - 1, pn]))
-                                if t > readData.LT[th]:
-                                    m.Bl[t, n].link_equal4.add(expr=(m.Bl[t, n].ngb_th_LT[th, r] ==
-                                                                     m.ngo_th_par[th, r, t - m.LT[th], pn]))
+            else:
+                m.Bl[t, n].fut_cost.pprint()
+                if t == 5:
+                    break
 
             # Solve the model
             mipsolver = SolverFactory('gurobi')  # _persistent')
@@ -140,18 +153,31 @@ for iter_ in m.iter:
             m.cost_t[t, n, iter_] = m.Bl[t, n].obj() - m.Bl[t, n].alphafut.value
             # print('cost', m.cost_t[t, n, iter_].value)
 
+        for n in n_stage[t]:
+            if expl_nodes[n] == 0:
+                r = random.randint(0, len(sampled_nodes_stage[t]) - 1)
+                n_ = sampled_nodes_stage[t][r]
+                # print("state", n, ", proxy", n_)
+                for (rn, r) in m.rn_r:
+                    m.ngo_rn_par_k[rn, r, t, n, iter_] = m.Bl[t, n_].ngo_rn[rn, r].value
+                    m.ngb_rn_par_k[rn, r, t, n, iter_] = m.Bl[t, n_].ngb_rn[rn, r].value
+
+                for (th, r) in m.th_r:
+                    m.ngo_th_par_k[th, r, t, n, iter_] = m.Bl[t, n_].ngo_th[th, r].value
+                    m.ngb_th_par_k[th, r, t, n, iter_] = m.Bl[t, n_].ngb_th[th, r].value
+
     # Compute cost per scenario solved
-    for k in list(sampled_scenarios.keys()):
-        m.cost_scenario[k, iter_] = 0
+    for s_sc in list(sampled_scenarios.keys()):
+        m.cost_scenario[s_sc, iter_] = 0
         for t in m.t:
-            m.cost_scenario[k, iter_] += m.cost_t[t, sampled_scenarios[k][len(m.t) - t], iter_]
-        # print(k, m.cost_scenario[k, iter_].value)
+            m.cost_scenario[s_sc, iter_] += m.cost_t[t, sampled_scenarios[s_sc][len(m.t) - t], iter_]
+        # print(s_sc, m.cost_scenario[s_sc, iter_].value)
 
     # Compute statistical upper bound
-    m.mean[iter_] = (1 / ns) * sum(m.cost_scenario[k, iter_] for k in list(sampled_scenarios.keys()))
+    m.mean[iter_] = (1 / ns) * sum(m.cost_scenario[s_sc, iter_] for s_sc in list(sampled_scenarios.keys()))
     print('mean', m.mean[iter_].value)
-    m.std_dev[iter_] = math.sqrt((1 / (ns - 1)) * sum((m.cost_scenario[k, iter_] - m.mean[iter_]) ** 2
-                                                      for k in list(sampled_scenarios.keys())))
+    m.std_dev[iter_] = math.sqrt((1 / (ns - 1)) * sum((m.cost_scenario[s_sc, iter_].value - m.mean[iter_].value) ** 2
+                                                      for s_sc in list(sampled_scenarios.keys())))
     print('std dev', m.std_dev[iter_].value)
     m.cost_forward[iter_] = m.mean[iter_] + z_alpha_2 * (m.std_dev[iter_] / math.sqrt(ns))
     m.cost_UB[iter_] = min(m.cost_forward[kk].value for kk in m.iter if kk <= iter_)
@@ -165,6 +191,33 @@ for iter_ in m.iter:
     m.k.add(iter_)
 
     for t in reversed(list(m.t)):
+
+        # add Benders cut
+        if t != m.t.last():
+            # for k in m.k:  # TODO: shouldn't it be iter_?
+                for pn_ in sampled_nodes_stage[t + 1]:
+                    for n in n_stage[t]:
+                        m.Bl[t, n].fut_cost.add(expr=(m.Bl[t, n].alphafut >=
+                                                      (m.prob[pn_] / m.prob[n]) * m.cost[t + 1, pn_, iter_]
+                                                      + sum((m.prob[pn_] / m.prob[n]) *
+                                                            m.mltp_o_rn[rn, r, t + 1, pn_, iter_] *
+                                                            (m.ngo_rn_par_k[rn, r, t, n, iter_] -
+                                                             m.Bl[t, n].ngo_rn[rn, r]) for rn, r in m.rn_r)
+                                                      + sum((m.prob[pn_] / m.prob[n]) *
+                                                            m.mltp_o_th[th, r, t + 1, pn_, iter_] *
+                                                            (m.ngo_th_par_k[th, r, t, n, iter_] -
+                                                             m.Bl[t, n].ngo_th[th, r]) for th, r in m.th_r)
+                                                      + sum((m.prob[pn_] / m.prob[n]) *
+                                                            m.mltp_b_rn[rn, r, t + m.LT[rn], pn_, iter_] *
+                                                            (m.ngb_rn_par_k[rn, r, t, n, iter_] -
+                                                             m.Bl[t, n].ngb_rn[rn, r]) for rn, r in m.rn_r
+                                                            if (t + m.LT[rn] <= m.t.last()))
+                                                      + sum((m.prob[pn_] / m.prob[n]) *
+                                                            m.mltp_b_th[th, r, t + m.LT[th], pn_, iter_] *
+                                                            (m.ngb_th_par_k[th, r, t, n, iter_] -
+                                                             m.Bl[t, n].ngb_th[th, r]) for th, r in m.th_r
+                                                            if (t + m.LT[th] <= m.t.last()))))
+
         for n in sampled_nodes_stage[t]:
             print("Time period", t)
             print("Current Node", n)
@@ -172,38 +225,7 @@ for iter_ in m.iter:
                 m.Bl[t, n].alphafut.fix(0)
             else:
                 m.Bl[t, n].alphafut.unfix()
-
-            # add Benders cut
-            if t != m.t.last():
-                for k in m.k:
-                    # for pn_ in N_stage[t]:
-                    #     if pn_ == n:
-                    m.Bl[t, n].fut_cost.add(expr=(m.Bl[t, n].alphafut >=
-                                                  sum((m.prob[n_] / m.prob[n]) * m.cost[t + 1, n_, k]
-                                                      for n_ in n_stage[t + 1] if n in parent_node[n_])
-                                                  + sum((m.prob[n_] / m.prob[n]) *
-                                                        m.mltp_o_rn[rn, r, t + 1, n_, k] *
-                                                        (m.ngo_rn_par_k[rn, r, t, n, k] -
-                                                         m.Bl[t, n].ngo_rn[rn, r]) for rn, r in m.rn_r
-                                                        for n_ in n_stage[t + 1] if n in parent_node[n_])
-                                                  + sum((m.prob[n_] / m.prob[n]) *
-                                                        m.mltp_o_th[th, r, t + 1, n_, k] *
-                                                        (m.ngo_th_par_k[th, r, t, n, k] -
-                                                         m.Bl[t, n].ngo_th[th, r]) for th, r in m.th_r
-                                                        for n_ in n_stage[t + 1] if n in parent_node[n_])
-                                                  + sum((m.prob[n_] / m.prob[n]) *
-                                                        m.mltp_b_rn[rn, r, t + m.LT[rn], n_, k] *
-                                                        (m.ngb_rn_par_k[rn, r, t, n, k] -
-                                                         m.Bl[t, n].ngb_rn[rn, r]) for rn, r in m.rn_r
-                                                        for n_ in n_stage[t + 1] if n in parent_node[n_]
-                                                        and (t + m.LT[rn] <= m.t.last()))
-                                                  + sum((m.prob[n_] / m.prob[n]) *
-                                                        m.mltp_b_th[th, r, t + m.LT[th], n_, k] *
-                                                        (m.ngb_th_par_k[th, r, t, n, k] -
-                                                         m.Bl[t, n].ngb_th[th, r]) for th, r in m.th_r
-                                                        for n_ in n_stage[t + 1] if n in parent_node[n_]
-                                                        and (t + m.LT[th] <= m.t.last()))))
-            #        m.Bl[t,n,pn].fut_cost.pprint()
+            # m.Bl[t, n].fut_cost.pprint()
 
             # Solve the model
             # opt = SolverFactory('cplex')
@@ -218,8 +240,8 @@ for iter_ in m.iter:
             # Get Lagrange multiplier from linking equality
             if t != m.t.first():
                 for rn_r_index in range(len(m.rn_r)):
-                    i = m.rn_r[rn_r_index][0]
-                    j = m.rn_r[rn_r_index][1]
+                    i = rn_r[rn_r_index][0]
+                    j = rn_r[rn_r_index][1]
                     m.mltp_o_rn[i, j, t, n, iter_] = - m.Bl[t, n].dual[m.Bl[t, n].link_equal1[rn_r_index + 1]]
                     if t > m.LT[rn]:
                         m.mltp_b_rn[i, j, t, n, iter_] = - m.Bl[t, n].dual[m.Bl[t, n].link_equal3[rn_r_index + 1]]
@@ -228,8 +250,8 @@ for iter_ in m.iter:
 
             if t != m.t.first():
                 for th_r_index in range(len(m.th_r)):
-                    i = m.th_r[th_r_index][0]
-                    j = m.th_r[th_r_index][1]
+                    i = th_r[th_r_index][0]
+                    j = th_r[th_r_index][1]
                     m.mltp_o_th[i, j, t, n, iter_] = - m.Bl[t, n].dual[m.Bl[t, n].link_equal2[th_r_index + 1]]
                     if t > m.LT[th]:
                         m.mltp_b_th[i, j, t, n, iter_] = - m.Bl[t, n].dual[m.Bl[t, n].link_equal4[th_r_index + 1]]
