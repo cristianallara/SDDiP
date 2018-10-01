@@ -262,9 +262,10 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
 
         def obj_rule(_b):
             return m.if_[t] * (sum(m.n_d[d] * m.hs * sum((m.VOC[i, t] + m.hr[i, r] * m.P_fuel[i, t]  # ,n]
-                                        + m.EF_CO2[i] * m.tx_CO2[t] * m.hr[i, r]) * _b.P[i, r, d, s] for i, r in m.i_r)
+                                                          + m.EF_CO2[i] * m.tx_CO2[t] * m.hr[i, r]) * _b.P[i, r, d, s]
+                                                         for i, r in m.i_r)
                                    for d in m.d for s in m.s) + sum(m.FOC[rn, t] * m.Qg_np[rn, r] * _b.ngo_rn[rn, r]
-                                     for rn, r in m.rn_r)
+                                                                    for rn, r in m.rn_r)
                                + sum(m.FOC[th, t] * m.Qg_np[th, r] * _b.ngo_th[th, r]
                                      for th, r in m.th_r)
                                + sum(m.n_d[d] * m.hs * _b.su[th, r, d, s] * m.Qg_np[th, r]
@@ -288,7 +289,7 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
         b.obj = Objective(rule=obj_rule, sense=minimize)
 
         def min_RN_req(_b):
-            return sum(m.n_d[d] * m.hs * sum(_b.P[rn, r, d, s] - _b.cu[r, d, s]for rn, r in m.i_r if rn in m.rn) \
+            return sum(m.n_d[d] * m.hs * sum(_b.P[rn, r, d, s] - _b.cu[r, d, s] for rn, r in m.i_r if rn in m.rn) \
                        for d in m.d for s in m.s) \
                    + _b.RES_def >= m.RES_min[t] * m.ED[t]
 
