@@ -1,4 +1,4 @@
-# Generation and Transmission Expansion Planning (MILP)
+# Generation and Transmission Expansion Planning (Multi-stage Stochastic Integer Programming)
 # IDAES project
 # author: Cristiana L. Lara
 # date: 10/09/2017
@@ -249,16 +249,8 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
                 b.ngb_th[told, r].fix(0.0)
 
         b.ngo_rn_prev = Var(m.rn_r, bounds=bound_o_rn, domain=NonNegativeReals)
-        # b.ngb_rn_LT = Var(m.rn_r, bounds=bound_b_rn, domain=NonNegativeReals)
-        # for rold, r in m.rn_r:
-        #     if rold in m.rold:
-        #         b.ngb_rn_LT[rold, r].fix(0.0)
 
         b.ngo_th_prev = Var(m.th_r, bounds=bound_o_th, domain=NonNegativeReals)
-        # b.ngb_th_LT = Var(m.th_r, bounds=bound_b_th, domain=NonNegativeReals)
-        # for told, r in m.th_r:
-        #     if told in m.told:
-        #         b.ngb_th_LT[told, r].fix(0.0)
 
         def obj_rule(_b):
             return m.if_[t] * (sum(m.n_d[d] * m.hs * sum((m.VOC[i, t] + m.hr[i, r] * m.P_fuel[i, t]  # ,n]
@@ -407,20 +399,6 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
 
         b.logic_TH_1 = Constraint(m.th_r, rule=logic_TH_1)
 
-        # def logic_RNew_2(_b, rnew, r):
-        #     if rnew in m.rnew:
-        #         return _b.ngb_rn_LT[rnew, r] == _b.ngr_rn[rnew, r] + _b.nge_rn[rnew, r]
-        #     return Constraint.Skip
-        #
-        # b.logic_RNew_2 = Constraint(m.rn_r, rule=logic_RNew_2)
-        #
-        # def logic_TNew_2(_b, tnew, r):
-        #     if tnew in m.tnew:
-        #         return _b.ngb_th_LT[tnew, r] == _b.ngr_th[tnew, r] + _b.nge_th[tnew, r]
-        #     return Constraint.Skip
-        #
-        # b.logic_TNew_2 = Constraint(m.th_r, rule=logic_TNew_2)
-
         def logic_ROld_2(_b, rold, r):
             if rold in m.rold:
                 return _b.ngr_rn[rold, r] + _b.nge_rn[rold, r] == m.Ng_r[rold, r, t]
@@ -444,28 +422,8 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
 
         b.link_equal2 = ConstraintList()  # m.th, m.r, rule=link_equal2)
 
-        # b.link_equal3 = ConstraintList()  # m.rn, m.r, rule=link_equal3)
-        #
-        # b.link_equal4 = ConstraintList()  # m.th, m.r, rule=link_equal4)
-
         b.fut_cost = ConstraintList()
 
     m.Bl = Block(m.n_stage, rule=planning_block_rule)
-
-    # Decomposition Parameters
-    m.ngo_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True)
-    m.ngo_th_par = Param(m.th_r, m.n_stage, default=0, initialize=0, mutable=True)
-    # m.ngb_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True)
-    # m.ngb_th_par = Param(m.th_r, m.n_stage, default=0, initialize=0, mutable=True)
-    m.ngo_rn_par_k = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    m.ngo_th_par_k = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    # m.ngb_rn_par_k = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    # m.ngb_th_par_k = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    m.cost = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    m.mltp_o_rn = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    m.mltp_o_th = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    # m.mltp_b_rn = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    # m.mltp_b_th = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-    m.cost_t = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
 
     return m

@@ -1,7 +1,10 @@
 import sqlite3 as sql
+import os.path
 
 
 def read_data(database_file, stages, n_stage):
+    print(os.path.exists(database_file))
+    print(database_file)
     conn = sql.connect(database_file)
     c = conn.cursor()
 
