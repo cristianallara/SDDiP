@@ -1,6 +1,8 @@
 __author__ = "Cristiana L. Lara"
-# Stochastic Nested Decomposition description at:
+# Stochastic Dual Dynamic Integer Programming (SDDiP) description at:
 # https://link.springer.com/content/pdf/10.1007%2Fs10107-018-1249-5.pdf
+
+# This algorithm scenario tree satisfies stage-wise independence
 
 import time
 import math
@@ -166,57 +168,53 @@ for iter_ in m.iter:
     m.k.add(iter_)
 
     for t in reversed(list(m.t)):
-        if t != m.t.last():
-            for n in n_stage[t]:
-                print("Time period", t)
-                print("Current Node", n)
-                if n in sampled_nodes_stage[t]:
-                    for cn in children_node[n]:
-                        print("Children Node", cn, "of time period", t + 1)
-                        if cn in n_stage[m.t.last()]:
-                            m.Bl[t + 1, cn].alphafut.fix(0)
-                        else:
-                            m.Bl[t + 1, cn].alphafut.unfix()
+        for n in sampled_nodes_stage[t]:
+            print("Time period", t)
+            print("Current Node", n)
+            if t == m.t.last():
+                m.Bl[t, n].alphafut.fix(0)
+            else:
+                m.Bl[t, n].alphafut.unfix()
 
-                        # Solve the model
-                        opt = SolverFactory('gurobi')
-                        opt.options['relax_integrality'] = 1
-                        opt.options['threads'] = 6
-                        # opt.options['SolutionNumber']=0
-                        opt.solve(m.Bl[t + 1, cn])  # , tee=True)#, save_results=False)#
+            # Solve the model
+            opt = SolverFactory('gurobi')
+            opt.options['relax_integrality'] = 1
+            opt.options['threads'] = 6
+            # opt.options['SolutionNumber']=0
+            opt.solve(m.Bl[t, n])  # , tee=True)#, save_results=False)#
+            if t == 1:
+                break
 
-                        # Get Lagrange multiplier from linking equality
-                        for rn_r_index in range(len(m.rn_r)):
-                            i = rn_r[rn_r_index][0]
-                            j = rn_r[rn_r_index][1]
-                            m.mltp_o_rn[i, j, t + 1, cn, iter_] = - m.Bl[t + 1, cn].dual[
-                                m.Bl[t + 1, cn].link_equal1[rn_r_index + 1]]
+            # Get Lagrange multiplier from linking equality
+            for rn_r_index in range(len(m.rn_r)):
+                i = rn_r[rn_r_index][0]
+                j = rn_r[rn_r_index][1]
+                m.mltp_o_rn[i, j, t , n, iter_] = - m.Bl[t, n].dual[
+                    m.Bl[t, n].link_equal1[rn_r_index + 1]]
 
-                        for th_r_index in range(len(m.th_r)):
-                            i = th_r[th_r_index][0]
-                            j = th_r[th_r_index][1]
-                            m.mltp_o_th[i, j, t + 1, cn, iter_] = - m.Bl[t + 1, cn].dual[
-                                m.Bl[t + 1, cn].link_equal2[th_r_index + 1]]
-                        #                m.mltp_o_th.pprint()
+            for th_r_index in range(len(m.th_r)):
+                i = th_r[th_r_index][0]
+                j = th_r[th_r_index][1]
+                m.mltp_o_th[i, j, t, n, iter_] = - m.Bl[t, n].dual[
+                    m.Bl[t, n].link_equal2[th_r_index + 1]]
+            #                m.mltp_o_th.pprint()
 
-                        # Get optimal value
-                        m.cost[t + 1, cn, iter_] = m.Bl[t + 1, cn].obj()
+            # Get optimal value
+            m.cost[t, n, iter_] = m.Bl[t, n].obj()
 
-                    # add Benders cut for current iteration
-                    m.Bl[t, n].fut_cost.add(expr=(m.Bl[t, n].alphafut >=
-                                                  sum((m.prob[cn] / m.prob[n]) * m.cost[t + 1, cn, iter_]
-                                                      + sum((m.prob[cn] / m.prob[n]) *
-                                                            m.mltp_o_rn[rn, r, t + 1, cn, iter_] *
-                                                            (m.ngo_rn_par_k[rn, r, t, n, iter_] -
-                                                             m.Bl[t, n].ngo_rn[rn, r]) for rn, r in m.rn_r)
-                                                      + sum((m.prob[cn] / m.prob[n]) *
-                                                            m.mltp_o_th[th, r, t + 1, cn, iter_] *
-                                                            (m.ngo_th_par_k[th, r, t, n, iter_] -
-                                                             m.Bl[t, n].ngo_th[th, r]) for th, r in m.th_r)
-                                                      for cn in children_node[n])))
-                    # m.Bl[t, n].fut_cost.pprint()
+            for pn in sampled_nodes_stage[t-1]:
+                # add Benders cut for current iteration
+                m.Bl[t-1, pn].fut_cost.add(expr=(m.Bl[t-1, pn].alphafut >= (1 / len(sampled_nodes_stage[t])) *
+                                              sum(m.cost[t, n_, iter_]
+                                                  + sum(m.mltp_o_rn[rn, r, t, n_, iter_] *
+                                                        (m.ngo_rn_par_k[rn, r, t-1, pn, iter_] -
+                                                         m.Bl[t-1, pn].ngo_rn[rn, r]) for rn, r in m.rn_r)
+                                                  + sum(m.mltp_o_th[th, r, t, n_, iter_] *
+                                                        (m.ngo_th_par_k[th, r, t-1, pn, iter_] -
+                                                         m.Bl[t-1, pn].ngo_th[th, r]) for th, r in m.th_r)
+                                                  for n_ in sampled_nodes_stage[t])))
+            # m.Bl[t, n].fut_cost.pprint()
 
-    opt.solve(m.Bl[1, 'O'])
     # Compute lower bound
     m.cost_LB[iter_] = m.Bl[1, 'O'].obj()
     m.cost_LB.pprint()
@@ -236,5 +234,3 @@ print("Upper Bound", m.cost_UB[iter_].value)
 print("Lower Bound", m.cost_LB[iter_].value)
 print("Optimality gap (%)", m.gap[iter_].value)
 print("CPU Time (s)", elapsed_time)
-
-# post_process()
