@@ -10,14 +10,13 @@ import random
 from copy import deepcopy
 import os.path
 from pyomo.environ import *
+import pymp
 
 from scenarioTree import create_scenario_tree
 import readData
 import optBlocks as b
 from forward import forward_pass
 from backward_SDDiP import backward_pass
-
-start_time = time.time()
 
 # ######################################################################################################################
 # USER-DEFINED PARAMS
@@ -46,19 +45,26 @@ readData.read_data(filepath, stages, n_stage)
 
 # create blocks
 m = b.create_model(time_periods, max_iter, n_stage, nodes, prob)
-print('finished generating the blocks')
-elapsed_time = time.time() - start_time
-print('CPU time to generate the scenario tree and blocks (s):', elapsed_time)
+print('finished generating the blocks, started counting solution time')
+start_time = time.time()
 
 # Decomposition Parameters
+ngo_rn_par = pymp.shared.dict()
+ngo_th_par = pymp.shared.dict()
+cost_forward = pymp.shared.dict()
 m.ngo_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True)
 m.ngo_th_par = Param(m.th_r, m.n_stage, default=0, initialize=0, mutable=True)
 m.ngo_rn_par_k = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
 m.ngo_th_par_k = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-m.cost = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
+m.cost_t = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
+
+mltp_o_rn = pymp.shared.dict()
+mltp_o_th = pymp.shared.dict()
+cost_backward = pymp.shared.dict()
 m.mltp_o_rn = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
 m.mltp_o_th = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-m.cost_t = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
+m.cost = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
+
 
 # Parameters to compute upper and lower bounds
 m.cost_scenario = Param(n_stage[time_periods], m.iter, default=0, initialize=0, mutable=True)
@@ -117,21 +123,31 @@ for iter_ in m.iter:
 
     # Forward Pass
     for t in m.t:
+        with pymp.Parallel(4) as p:
+            for n in p.iterate(sampled_nodes_stage[t]):
+                print("Time period", t)
+                print("Current Node", n)
+                print("Current thread", p.thread_num)
+
+                ngo_rn, ngo_th, cost = forward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
+
+                if t != time_periods:
+                    for (rn, r) in rn_r:
+                        ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r]
+                    for (th, r) in th_r:
+                        ngo_th_par[th, r, t, n] = ngo_th[th, r]
+                cost_forward[t, n] = cost
+                print('cost', cost_forward[t, n])
+
         for n in sampled_nodes_stage[t]:
-            print("Time period", t)
-            print("Current Node", n)
-
-            ngo_rn, ngo_th, cost = forward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
-
             if t != time_periods:
                 for (rn, r) in rn_r:
-                    m.ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r]
-                    m.ngo_rn_par_k[rn, r, t, n, iter_] = ngo_rn[rn, r]
+                    m.ngo_rn_par[rn, r, t, n] = ngo_rn_par[rn, r, t, n]
+                    m.ngo_rn_par_k[rn, r, t, n, iter_] = ngo_rn_par[rn, r, t, n]
                 for (th, r) in th_r:
-                    m.ngo_th_par[th, r, t, n] = ngo_th[th, r]
-                    m.ngo_th_par_k[th, r, t, n, iter_] = ngo_th[th, r]
-            m.cost_t[t, n, iter_] = cost
-            print('cost', m.cost_t[t, n, iter_].value)
+                    m.ngo_th_par[th, r, t, n] = ngo_th_par[th, r, t, n]
+                    m.ngo_th_par_k[th, r, t, n, iter_] = ngo_th_par[th, r, t, n]
+            m.cost_t[t, n, iter_] = cost_forward[t, n]
 
     # Compute cost per scenario solved
     for s_sc in list(sampled_scenarios.keys()):
@@ -156,30 +172,40 @@ for iter_ in m.iter:
     m.k.add(iter_)
 
     for t in reversed(list(m.t)):
+        with pymp.Parallel(4) as pp:
+            for n in pp.iterate(sampled_nodes_stage[t]):
+                print("Time period", t)
+                print("Current Node", n)
+                print("Current thread", pp.thread_num)
+
+                mltp_rn, mltp_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
+
+                cost_backward[t, n] = cost
+                print('cost', cost_backward[t, n])
+                if t != 1:
+                    for (rn, r) in rn_r:
+                        mltp_o_rn[rn, r, t, n] = mltp_rn[rn, r]
+                    for (th, r) in th_r:
+                        mltp_o_th[th, r, t, n] = mltp_th[th, r]
+
         for n in sampled_nodes_stage[t]:
-            print("Time period", t)
-            print("Current Node", n)
-
-            mltp_o_rn, mltp_o_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
-
-            for (rn, r) in rn_r:
-                m.mltp_o_rn[rn, r, t, n, iter_] = mltp_o_rn[rn, r]
-            for (th, r) in th_r:
-                m.mltp_o_th[th, r, t, n, iter_] = mltp_o_th[th, r]
-            m.cost[t, n, iter_] = cost
-            print('cost', m.cost[t, n, iter_].value)
-
-            for pn in sampled_nodes_stage[t-1]:
-                # add Benders cut for current iteration
-                m.Bl[t-1, pn].fut_cost.add(expr=(m.Bl[t-1, pn].alphafut >= (1 / len(sampled_nodes_stage[t])) *
-                                              sum(m.cost[t, n_, iter_]
-                                                  + sum(m.mltp_o_rn[rn, r, t, n_, iter_] *
-                                                        (m.ngo_rn_par_k[rn, r, t-1, pn, iter_] -
-                                                         m.Bl[t-1, pn].ngo_rn[rn, r]) for rn, r in m.rn_r)
-                                                  + sum(m.mltp_o_th[th, r, t, n_, iter_] *
-                                                        (m.ngo_th_par_k[th, r, t-1, pn, iter_] -
-                                                         m.Bl[t-1, pn].ngo_th[th, r]) for th, r in m.th_r)
-                                                  for n_ in sampled_nodes_stage[t])))
+            m.cost[t, n, iter_] = cost_backward[t, n]
+            if t != 1:
+                for (rn, r) in rn_r:
+                    m.mltp_o_rn[rn, r, t, n, iter_] = mltp_o_rn[rn, r, t, n]
+                for (th, r) in th_r:
+                    m.mltp_o_th[th, r, t, n, iter_] = mltp_o_th[th, r, t, n]
+                for pn in sampled_nodes_stage[t-1]:
+                    # add Benders cut for current iteration
+                    m.Bl[t-1, pn].fut_cost.add(expr=(m.Bl[t-1, pn].alphafut >= (1 / len(sampled_nodes_stage[t])) *
+                                                  sum(m.cost[t, n_, iter_]
+                                                      + sum(m.mltp_o_rn[rn, r, t, n_, iter_] *
+                                                            (m.ngo_rn_par_k[rn, r, t-1, pn, iter_] -
+                                                             m.Bl[t-1, pn].ngo_rn[rn, r]) for rn, r in m.rn_r)
+                                                      + sum(m.mltp_o_th[th, r, t, n_, iter_] *
+                                                            (m.ngo_th_par_k[th, r, t-1, pn, iter_] -
+                                                             m.Bl[t-1, pn].ngo_th[th, r]) for th, r in m.th_r)
+                                                      for n_ in sampled_nodes_stage[t])))
             # m.Bl[t, n].fut_cost.pprint()
 
     # Compute lower bound

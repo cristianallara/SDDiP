@@ -9,7 +9,7 @@ def forward_pass(t, bl, time_periods, rn_r, th_r):
     mipsolver = SolverFactory('gurobi')
     mipsolver.options['mipgap'] = 0.0001
     mipsolver.options['timelimit'] = 40
-    mipsolver.options['threads'] = 6
+    # mipsolver.options['threads'] = 6
     mipsolver.solve(bl)  # , tee=True)#,save_results=False)    m.Bl[t, n]
 
     ngo_rn_par = {}
