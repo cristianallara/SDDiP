@@ -8,6 +8,7 @@ import time
 import math
 import random
 from copy import deepcopy
+import os.path
 from pyomo.environ import *
 
 from scenarioTree import create_scenario_tree
@@ -19,9 +20,8 @@ start_time = time.time()
 # ######################################################################################################################
 # USER-DEFINED PARAMS
 
-# Define case-study
-filepath = "/Users/cristianalopeslara/Documents/SDDiP/nestedBenders/GTEPdata_5years.db"
-print(filepath)
+curPath = os.path.abspath(os.path.curdir)
+filepath = os.path.join(curPath, 'GTEPdata_5years.db')
 time_periods = 5
 stages = range(1, time_periods + 1)
 scenarios = ['L', 'R', 'H']
@@ -91,11 +91,6 @@ for t in m.t:
                         m.Bl[t, n].link_equal2.add(expr=(m.Bl[t, n].ngo_th_prev[th, r] ==
                                                          m.ngo_th_par[th, r, t - 1, pn]))
 
-expl_nodes = {}
-for iter_ in m.iter:
-    for n in nodes:
-        expl_nodes[n, iter_] = 0
-
 # Stochastic Dual Dynamic integer Programming Algorithm (SDDiP)
 for iter_ in m.iter:
 
@@ -128,8 +123,6 @@ for iter_ in m.iter:
             mipsolver.options['timelimit'] = 40
             mipsolver.options['threads'] = 6
             mipsolver.solve(m.Bl[t, n])  # , tee=True)#,save_results=False)
-
-            expl_nodes[n, iter_] = 1
 
             # Fix the linking variable as parameter for next t
             if t != m.t.last():

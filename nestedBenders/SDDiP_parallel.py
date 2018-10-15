@@ -10,11 +10,12 @@ import random
 from copy import deepcopy
 import os.path
 from pyomo.environ import *
-import pymp
 
 from scenarioTree import create_scenario_tree
 import readData
 import optBlocks as b
+from forward import forward_pass
+from backward_SDDiP import backward_pass
 
 start_time = time.time()
 
@@ -32,7 +33,7 @@ single_prob = {'L': 1/3, 'R': 1/3, 'H': 1/3}
 # Define parameters of the decomposition
 max_iter = 10
 opt_tol = 1  # %
-ns = 30  # Number of scenarios solved per Forward/Backward Pass
+ns = 15  # Number of scenarios solved per Forward/Backward Pass
 # NOTE: ns should be between 1 and len(n_stage[time_periods])
 z_alpha_2 = 1.96  # 95% confidence level
 
@@ -50,17 +51,14 @@ elapsed_time = time.time() - start_time
 print('CPU time to generate the scenario tree and blocks (s):', elapsed_time)
 
 # Decomposition Parameters
-ngo_rn_par = pymp.shared.dict()
-ngo_th_par = pymp.shared.dict()
 m.ngo_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True)
 m.ngo_th_par = Param(m.th_r, m.n_stage, default=0, initialize=0, mutable=True)
-ngo_rn_par_k = pymp.shared.dict()
-ngo_th_par_k = pymp.shared.dict()
-cost_t = pymp.shared.dict()
-
+m.ngo_rn_par_k = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
+m.ngo_th_par_k = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
+m.cost = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
 m.mltp_o_rn = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
 m.mltp_o_th = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
-m.cost = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
+m.cost_t = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
 
 # Parameters to compute upper and lower bounds
 m.cost_scenario = Param(n_stage[time_periods], m.iter, default=0, initialize=0, mutable=True)
@@ -96,6 +94,7 @@ for t in m.t:
                         m.Bl[t, n].link_equal2.add(expr=(m.Bl[t, n].ngo_th_prev[th, r] ==
                                                          m.ngo_th_par[th, r, t - 1, pn]))
 
+
 # Stochastic Dual Dynamic integer Programming Algorithm (SDDiP)
 for iter_ in m.iter:
 
@@ -118,46 +117,27 @@ for iter_ in m.iter:
 
     # Forward Pass
     for t in m.t:
-        with pymp.Parallel(4) as p:
-            for n in p.iterate(sampled_nodes_stage[t]):
-                print("Time period", t)
-                print("Current Node", n)
+        for n in sampled_nodes_stage[t]:
+            print("Time period", t)
+            print("Current Node", n)
 
-                if t != 1:
-                    for (rn, r) in m.rn_r:
-                        m.ngo_rn_par[rn, r, t-1, parent_node[n]] = ngo_rn_par[rn, r, t-1, parent_node[n]]
-                        # print(rn, r, t-1, parent_node[n], m.ngo_rn_par[rn, r, t-1, parent_node[n]].value)
-                    for (th, r) in m.th_r:
-                        m.ngo_th_par[th, r, t-1,parent_node[n]] = ngo_th_par[th, r, t-1, parent_node[n]]
-                    #     print(th, r, t-1, parent_node[n], m.ngo_th_par[th, r, t-1, parent_node[n]].value)
-                    # print(t, cost_t[t-1, parent_node[n], iter_])
+            ngo_rn, ngo_th, cost = forward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
 
-                # Solve the model
-                mipsolver = SolverFactory('gurobi')
-                mipsolver.options['mipgap'] = 0.0001
-                mipsolver.options['timelimit'] = 40
-                mipsolver.options['threads'] = 6
-                mipsolver.solve(m.Bl[t, n])  # , tee=True)#,save_results=False)
-
-                # Fix the linking variable as parameter for next t
-                if t != m.t.last():
-                    for (rn, r) in m.rn_r:
-                        ngo_rn_par_k[rn, r, t, n, iter_] = m.Bl[t, n].ngo_rn[rn, r].value
-                        ngo_rn_par[rn, r, t, n] = m.Bl[t, n].ngo_rn[rn, r].value
-
-                    for (th, r) in m.th_r:
-                        ngo_th_par_k[th, r, t, n, iter_] = m.Bl[t, n].ngo_th[th, r].value
-                        ngo_th_par[th, r, t, n] = m.Bl[t, n].ngo_th[th, r].value
-
-                # Store obj value to compute UB
-                cost_t[t, n, iter_] = m.Bl[t, n].obj() - m.Bl[t, n].alphafut.value
-                print('cost', t, n, cost_t[t, n, iter_])
+            if t != time_periods:
+                for (rn, r) in rn_r:
+                    m.ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r]
+                    m.ngo_rn_par_k[rn, r, t, n, iter_] = ngo_rn[rn, r]
+                for (th, r) in th_r:
+                    m.ngo_th_par[th, r, t, n] = ngo_th[th, r]
+                    m.ngo_th_par_k[th, r, t, n, iter_] = ngo_th[th, r]
+            m.cost_t[t, n, iter_] = cost
+            print('cost', m.cost_t[t, n, iter_].value)
 
     # Compute cost per scenario solved
     for s_sc in list(sampled_scenarios.keys()):
         m.cost_scenario[s_sc, iter_] = 0
         for t in m.t:
-            m.cost_scenario[s_sc, iter_] += cost_t[t, sampled_scenarios[s_sc][len(m.t) - t], iter_]
+            m.cost_scenario[s_sc, iter_] += m.cost_t[t, sampled_scenarios[s_sc][len(m.t) - t], iter_]
         # print(s_sc, m.cost_scenario[s_sc, iter_].value)
 
     # Compute statistical upper bound
@@ -179,52 +159,31 @@ for iter_ in m.iter:
         for n in sampled_nodes_stage[t]:
             print("Time period", t)
             print("Current Node", n)
-            if t == m.t.last():
-                m.Bl[t, n].alphafut.fix(0)
-            else:
-                m.Bl[t, n].alphafut.unfix()
 
-            # Solve the model
-            opt = SolverFactory('gurobi')
-            opt.options['relax_integrality'] = 1
-            opt.options['threads'] = 6
-            # opt.options['SolutionNumber']=0
-            opt.solve(m.Bl[t, n])  # , tee=True)#, save_results=False)#
-            if t == 1:
-                break
+            mltp_o_rn, mltp_o_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
 
-            # Get Lagrange multiplier from linking equality
-            for rn_r_index in range(len(m.rn_r)):
-                i = rn_r[rn_r_index][0]
-                j = rn_r[rn_r_index][1]
-                m.mltp_o_rn[i, j, t , n, iter_] = - m.Bl[t, n].dual[
-                    m.Bl[t, n].link_equal1[rn_r_index + 1]]
-
-            for th_r_index in range(len(m.th_r)):
-                i = th_r[th_r_index][0]
-                j = th_r[th_r_index][1]
-                m.mltp_o_th[i, j, t, n, iter_] = - m.Bl[t, n].dual[
-                    m.Bl[t, n].link_equal2[th_r_index + 1]]
-            #                m.mltp_o_th.pprint()
-
-            # Get optimal value
-            m.cost[t, n, iter_] = m.Bl[t, n].obj()
+            for (rn, r) in rn_r:
+                m.mltp_o_rn[rn, r, t, n, iter_] = mltp_o_rn[rn, r]
+            for (th, r) in th_r:
+                m.mltp_o_th[th, r, t, n, iter_] = mltp_o_th[th, r]
+            m.cost[t, n, iter_] = cost
+            print('cost', m.cost[t, n, iter_].value)
 
             for pn in sampled_nodes_stage[t-1]:
                 # add Benders cut for current iteration
                 m.Bl[t-1, pn].fut_cost.add(expr=(m.Bl[t-1, pn].alphafut >= (1 / len(sampled_nodes_stage[t])) *
                                               sum(m.cost[t, n_, iter_]
                                                   + sum(m.mltp_o_rn[rn, r, t, n_, iter_] *
-                                                        (ngo_rn_par_k[rn, r, t-1, pn, iter_] -
+                                                        (m.ngo_rn_par_k[rn, r, t-1, pn, iter_] -
                                                          m.Bl[t-1, pn].ngo_rn[rn, r]) for rn, r in m.rn_r)
                                                   + sum(m.mltp_o_th[th, r, t, n_, iter_] *
-                                                        (ngo_th_par_k[th, r, t-1, pn, iter_] -
+                                                        (m.ngo_th_par_k[th, r, t-1, pn, iter_] -
                                                          m.Bl[t-1, pn].ngo_th[th, r]) for th, r in m.th_r)
                                                   for n_ in sampled_nodes_stage[t])))
             # m.Bl[t, n].fut_cost.pprint()
 
     # Compute lower bound
-    m.cost_LB[iter_] = m.Bl[1, 'O'].obj()
+    m.cost_LB[iter_] = m.cost[1, 'O', iter_].value
     m.cost_LB.pprint()
     # Compute optimality gap
     m.gap[iter_] = (m.cost_UB[iter_] - m.cost_LB[iter_]) / m.cost_UB[iter_] * 100
