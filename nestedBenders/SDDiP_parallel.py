@@ -31,7 +31,7 @@ single_prob = {'L': 1/3, 'R': 1/3, 'H': 1/3}
 
 # Define parameters of the decomposition
 max_iter = 10
-opt_tol = 1  # %
+opt_tol = 2  # %
 ns = 15  # Number of scenarios solved per Forward/Backward Pass
 # NOTE: ns should be between 1 and len(n_stage[time_periods])
 z_alpha_2 = 1.96  # 95% confidence level
@@ -172,7 +172,7 @@ for iter_ in m.iter:
     m.k.add(iter_)
 
     for t in reversed(list(m.t)):
-        with pymp.Parallel(4) as pp:
+        with pymp.Parallel(3) as pp:
             for n in pp.iterate(sampled_nodes_stage[t]):
                 print("Time period", t)
                 print("Current Node", n)
@@ -181,7 +181,7 @@ for iter_ in m.iter:
                 mltp_rn, mltp_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
 
                 cost_backward[t, n] = cost
-                print('cost', cost_backward[t, n])
+                print('cost', t, n, cost_backward[t, n])
                 if t != 1:
                     for (rn, r) in rn_r:
                         mltp_o_rn[rn, r, t, n] = mltp_rn[rn, r]

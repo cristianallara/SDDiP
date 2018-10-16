@@ -12,6 +12,7 @@ def backward_pass(t, bl, time_periods, rn_r, th_r):
     # Solve the model
     opt = SolverFactory('gurobi')
     opt.options['relax_integrality'] = 1
+    opt.options['timelimit'] = 40
     # opt.options['threads'] = 6
     opt.solve(bl)  # , tee=True)#, save_results=False)#
 
