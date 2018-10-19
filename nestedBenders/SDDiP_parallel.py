@@ -172,21 +172,23 @@ for iter_ in m.iter:
     m.k.add(iter_)
 
     for t in reversed(list(m.t)):
-        with pymp.Parallel(3) as pp:
-            for n in pp.iterate(sampled_nodes_stage[t]):
-                print("Time period", t)
-                print("Current Node", n)
-                print("Current thread", pp.thread_num)
+        # with pymp.Parallel(1) as pp:
+            # for n in pp.iterate(sampled_nodes_stage[t]):
+        for n in sampled_nodes_stage[t]:
+            print("Time period", t)
+            print("Current Node", n)
+            # print("Current thread", pp.thread_num)
 
-                mltp_rn, mltp_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
+            mltp_rn, mltp_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
 
-                cost_backward[t, n] = cost
-                print('cost', t, n, cost_backward[t, n])
-                if t != 1:
-                    for (rn, r) in rn_r:
-                        mltp_o_rn[rn, r, t, n] = mltp_rn[rn, r]
-                    for (th, r) in th_r:
-                        mltp_o_th[th, r, t, n] = mltp_th[th, r]
+            cost_backward[t, n] = cost
+            print('cost', t, n, cost_backward[t, n])
+
+            if t != 1:
+                for (rn, r) in rn_r:
+                    mltp_o_rn[rn, r, t, n] = mltp_rn[rn, r]
+                for (th, r) in th_r:
+                    mltp_o_th[th, r, t, n] = mltp_th[th, r]
 
         for n in sampled_nodes_stage[t]:
             m.cost[t, n, iter_] = cost_backward[t, n]
@@ -216,6 +218,8 @@ for iter_ in m.iter:
     print(m.gap[iter_].value)
 
     if m.gap[iter_].value <= opt_tol:
+        m.ngo_rn_par_k.pprint()
+        m.ngo_th_par_k.pprint()
         break
 
     elapsed_time = time.time() - start_time

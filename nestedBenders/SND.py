@@ -13,8 +13,6 @@ from scenarioTree import create_scenario_tree
 import readData
 import optBlocks as b
 
-start_time = time.time()
-
 # ######################################################################################################################
 # USER-DEFINED PARAMS
 
@@ -27,9 +25,9 @@ scenarios = ['L', 'R', 'H']
 single_prob = {'L': 1/3, 'R': 1/3, 'H': 1/3}
 
 # Define parameters of the decomposition
-max_iter = 10
-opt_tol = 1  # %
-ns = 30  # Number of scenarios solved per Forward/Backward Pass
+max_iter = 50
+opt_tol = 2  # %
+ns = 15  # Number of scenarios solved per Forward/Backward Pass
 # NOTE: ns should be between 1 and len(n_stage[time_periods])
 z_alpha_2 = 1.96  # 95% confidence level
 
@@ -42,9 +40,8 @@ readData.read_data(filepath, stages, n_stage)
 
 # create blocks
 m = b.create_model(time_periods, max_iter, n_stage, nodes, prob)
-print('finished generating the blocks')
-elapsed_time = time.time() - start_time
-print('CPU time to generate the scenario tree and blocks (s):', elapsed_time)
+print('finished generating the blocks, started counting solution time')
+start_time = time.time()
 
 # Decomposition Parameters
 m.ngo_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True)
