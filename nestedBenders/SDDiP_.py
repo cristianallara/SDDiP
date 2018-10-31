@@ -10,6 +10,7 @@ import random
 from copy import deepcopy
 import os.path
 from pyomo.environ import *
+import csv
 
 from scenarioTree import create_scenario_tree
 import readData
@@ -21,16 +22,16 @@ from backward_SDDiP import backward_pass
 # USER-DEFINED PARAMS
 
 curPath = os.path.abspath(os.path.curdir)
-filepath = os.path.join(curPath, 'GTEPdata_5years.db')
+filepath = os.path.join(curPath, 'GTEPdata_2019_2023.db')
 time_periods = 5
 stages = range(1, time_periods + 1)
-scenarios = ['L', 'R', 'H']
-single_prob = {'L': 1/3, 'R': 1/3, 'H': 1/3}
+scenarios = ['L', 'M', 'H']
+single_prob = {'L': 1 / 3, 'M': 1 / 3, 'H': 1 / 3}
 
 # Define parameters of the decomposition
-max_iter = 10
-opt_tol = 2  # %
-ns = 15  # Number of scenarios solved per Forward/Backward Pass
+max_iter = 50
+opt_tol = 1  # %
+ns = 20  # Number of scenarios solved per Forward/Backward Pass
 # NOTE: ns should be between 1 and len(n_stage[time_periods])
 z_alpha_2 = 1.96  # 95% confidence level
 
@@ -117,7 +118,17 @@ for iter_ in m.iter:
             print("Time period", t)
             print("Current Node", n)
 
-            ngo_rn, ngo_th, cost = forward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
+            # for value stochastic (delete this later)
+            # if t == 1:
+            #     for (rn, r) in rn_r:
+            #         if rn == 'ng-cc-new' and r == 'Coastal':
+            #             m.Bl[t, n].ngb_rn[rn, r].fix(1)
+            #         elif rn == 'ng-ct-new' and r == 'Northeast':
+            #             m.Bl[t, n].ngb_rn[rn, r].fix(3)
+            #         else:
+            #             m.Bl[t, n].ngb_rn[rn, r].fix(0)
+
+            ngo_rn, ngo_th, cost = forward_pass(m.Bl[t, n], rn_r, th_r)
 
             if t != time_periods:
                 for (rn, r) in rn_r:
@@ -126,6 +137,11 @@ for iter_ in m.iter:
                 for (th, r) in th_r:
                     m.ngo_th_par[th, r, t, n] = ngo_th[th, r]
                     m.ngo_th_par_k[th, r, t, n, iter_] = ngo_th[th, r]
+            else:
+                for (rn, r) in rn_r:
+                    m.ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r]
+                for (th, r) in th_r:
+                    m.ngo_th_par[th, r, t, n] = ngo_th[th, r]
             m.cost_t[t, n, iter_] = cost
             print('cost', m.cost_t[t, n, iter_].value)
 
@@ -156,10 +172,20 @@ for iter_ in m.iter:
             print("Time period", t)
             print("Current Node", n)
 
+            # for value stochastic
+            # if t == 1:
+            #     for (rn, r) in rn_r:
+            #         if rn == 'ng-cc-new' and r == 'Coastal':
+            #             m.Bl[t, n].ngb_rn[rn, r].fix(1)
+            #         elif rn == 'ng-ct-new' and r == 'Northeast':
+            #             m.Bl[t, n].ngb_rn[rn, r].fix(3)
+            #         else:
+            #             m.Bl[t, n].ngb_rn[rn, r].fix(0)
+
             mltp_rn, mltp_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
 
             m.cost[t, n, iter_] = cost
-            print('cost', t, n, m.cost[t, n, iter_])
+            print('cost', t, n, m.cost[t, n, iter_].value)
 
             if t != 1:
                 for (rn, r) in rn_r:
@@ -187,6 +213,17 @@ for iter_ in m.iter:
     print(m.gap[iter_].value)
 
     if m.gap[iter_].value <= opt_tol:
+        # write results for state variables in a csv file
+        with open('results.csv', mode='w') as results_file:
+            results_writer = csv.writer(results_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            for t in m.t:
+                for n in sampled_nodes_stage[t]:
+                    for (rn, r) in rn_r:
+                        if m.ngo_rn_par[rn, r, t, n].value != 0:
+                            results_writer.writerow([rn, r, t, n, m.ngo_rn_par[rn, r, t, n].value])
+                    for (th, r) in th_r:
+                        if m.ngo_th_par[th, r, t, n].value != 0:
+                            results_writer.writerow([th, r, t, n, m.ngo_th_par[th, r, t, n].value])
         break
 
     elapsed_time = time.time() - start_time

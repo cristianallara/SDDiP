@@ -60,23 +60,42 @@ def read_data(database_file, stages, n_stage):
     t_up['Panhandle', 'South'] = 0
 
     # Different scenarios for peak load:
-    L_max_scenario = {'R': L_max, 'L': {t: 0.9 * L_max[t] for t in L_max}, 'H': {t: 1.1 * L_max[t] for t in L_max}}
+    L_max_scenario = {'L': L_max, 'M': {t: 1.05 * L_max[t] for t in L_max}, 'H': {t: 1.2 * L_max[t] for t in L_max}}
     # print(L_max_scenario)
 
     L_max_s = {}
     for t in stages:
         for n in n_stage[t]:
             if t == 1:
-                L_max_s[t, n] = L_max_scenario['R'][t]
+                L_max_s[t, n] = L_max_scenario['M'][t]
             else:
                 m = n[-1]
                 if m == 'L':
                     L_max_s[t, n] = L_max_scenario['L'][t]
-                elif m == 'R':
-                    L_max_s[t, n] = L_max_scenario['R'][t]
+                elif m == 'M':
+                    L_max_s[t, n] = L_max_scenario['M'][t]
                 elif m == 'H':
                     L_max_s[t, n] = L_max_scenario['H'][t]
     globals()["L_max_s"] = L_max_s
+
+    # Different scenarios for carbon tax:
+    # tx_CO2_scenario = {'L': 0, 'M': 0.025, 'H': 0.050}
+    #
+    # tx_CO2 = {}
+    # for t in stages:
+    #     for n in n_stage[t]:
+    #         if t == 1:
+    #             tx_CO2[t, n] = 0
+    #         else:
+    #             m = n[-1]
+    #             if m == 'L':
+    #                 tx_CO2[t, n] = tx_CO2_scenario['L']
+    #             elif m == 'M':
+    #                 tx_CO2[t, n] = tx_CO2_scenario['M']
+    #             elif m == 'H':
+    #                 tx_CO2[t, n] = tx_CO2_scenario['H']
+    # globals()["tx_CO2"] = tx_CO2
+
     print('finished loading data')
 
 
