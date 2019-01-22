@@ -24,7 +24,8 @@ from backward_SDDiP import backward_pass
 
 # Define case-study
 curPath = os.path.abspath(os.path.curdir)
-filepath = os.path.join(curPath, 'GTEPdata_5years.db')
+filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
+print(filepath)
 time_periods = 5
 stages = range(1, time_periods + 1)
 scenarios = ['L', 'M', 'H']

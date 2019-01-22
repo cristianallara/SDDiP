@@ -22,7 +22,8 @@ from backward_SDDiP import backward_pass
 # USER-DEFINED PARAMS
 
 curPath = os.path.abspath(os.path.curdir)
-filepath = os.path.join(curPath, 'GTEPdata_2019_2023.db')
+filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
+print(filepath)
 time_periods = 5
 stages = range(1, time_periods + 1)
 scenarios = ['L', 'M', 'H']
@@ -128,7 +129,9 @@ for iter_ in m.iter:
             #         else:
             #             m.Bl[t, n].ngb_rn[rn, r].fix(0)
 
-            ngo_rn, ngo_th, cost = forward_pass(m.Bl[t, n], rn_r, th_r)
+            state_vars = [m.Bl[t, n].ngo_rn, m.Bl[t, n].ngo_th]
+
+            [ngo_rn, ngo_th], cost = forward_pass(m.Bl[t, n], state_vars, opt_tol=0.0001, time_limit=40)
 
             if t != time_periods:
                 for (rn, r) in rn_r:
