@@ -369,14 +369,12 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
         b.total_spin_reserve = Constraint(m.r, m.d, m.s, rule=total_spin_reserve)
 
         def reserve_cap_1(_b, th, r, d, s):
-            return _b.Q_spin[th, r, d, s] <= _b.u[th, r, d, s] * m.Qg_np[th, r] * \
-                   m.frac_spin[th]
-
+            return _b.Q_spin[th, r, d, s] <= m.Qg_np[th, r] * m.frac_spin[th] * _b.u[th, r, d, s]
         b.reserve_cap_1 = Constraint(m.th_r, m.d, m.s, rule=reserve_cap_1)
 
         def reserve_cap_2(_b, th, r, d, s):
-            return _b.Q_Qstart[th, r, d, s] <= (_b.ngo_th[th, r] - _b.u[th, r, d, s]) \
-                   * m.Qg_np[th, r] * m.frac_Qstart[th]
+            return _b.Q_Qstart[th, r, d, s] <=  m.Qg_np[th, r] * m.frac_Qstart[th] * \
+                   (_b.ngo_th[th, r] - _b.u[th, r, d, s])
 
         b.reserve_cap_2 = Constraint(m.th_r, m.d, m.s, rule=reserve_cap_2)
 

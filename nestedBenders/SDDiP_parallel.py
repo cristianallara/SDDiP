@@ -19,6 +19,9 @@ import optBlocks as b
 from forward import forward_pass
 from backward_SDDiP import backward_pass
 
+# import pyomo.common.timing as timing
+# timing.report_timing()
+
 # ######################################################################################################################
 # USER-DEFINED PARAMS
 
@@ -50,11 +53,11 @@ m = b.create_model(time_periods, max_iter, n_stage, nodes, prob)
 print('finished generating the blocks, started counting solution time')
 start_time = time.time()
 
-# Decomposition Parameters
+# Decomposition Parameters # TODO: change to dict
 ngo_rn_par = pymp.shared.dict()
 ngo_th_par = pymp.shared.dict()
 cost_forward = pymp.shared.dict()
-m.ngo_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True)
+m.ngo_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True) # TODO:delete
 m.ngo_th_par = Param(m.th_r, m.n_stage, default=0, initialize=0, mutable=True)
 m.ngo_rn_par_k = Param(m.rn_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
 m.ngo_th_par_k = Param(m.th_r, m.n_stage, m.iter, default=0, initialize=0, mutable=True)
@@ -122,7 +125,7 @@ for iter_ in m.iter:
         sampled_nodes = []
 
     # Forward Pass
-    for t in m.t:
+    for t in m.t: #TODO: move inside parallel loop
         with pymp.Parallel(4) as p:
             for n in p.iterate(sampled_nodes_stage[t]):
                 print("Time period", t)
