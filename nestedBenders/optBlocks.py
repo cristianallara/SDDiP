@@ -9,7 +9,7 @@ import math
 import readData
 
 
-def create_model(time_periods, max_iter, n_stage, nodes, prob):
+def create_model(time_periods, max_iter, n_stage, nodes, L_max_scenario_pid, pid):
     m = ConcreteModel()
 
     # Declaration of sets
@@ -52,7 +52,8 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
     # Set of iterations for which cuts are generated
     m.k = Set(within=m.iter, dimen=1, ordered=True)
 
-    t_stage = [(t, n) for t in m.t for n in n_stage[t]]
+    nodes_set = set(nodes)
+    t_stage = [(t, n) for t in m.t for n in n_stage[t] if n in nodes_set]
     m.n_stage = Set(initialize=t_stage)
 
     # Import parameters
@@ -75,7 +76,7 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
 
     m.L = Param(m.r, m.t, m.d, m.s, default=0, initialize=readData.L)
     m.n_d = Param(m.d, default=0, initialize=readData.n_ss)
-    m.L_max = Param(m.n_stage, default=0, initialize=readData.L_max_s)
+    m.L_max = Param(m.n_stage, default=0, initialize=L_max_scenario_pid)
     # m.L_max = Param(m.t, default=0, initialize=readData.L_max)
     m.cf = Param(m.i, m.r, m.t, m.d, m.s, default=0, initialize=readData.cf)
     m.Qg_np = Param(m.i_r, default=0, initialize=readData.Qg_np)
@@ -114,15 +115,13 @@ def create_model(time_periods, max_iter, n_stage, nodes, prob):
     m.RES_min = Param(m.t, default=0, initialize=readData.RES_min)
     m.hs = Param(initialize=readData.hs, default=0)
     m.ir = Param(initialize=readData.ir, default=0)
-    m.prob = Param(nodes, initialize=prob)
 
     print("loaded the data")
     print('Starting to build the blocks')
 
     # Block of Equations per time period
     def planning_block_rule(b, t, n):
-        print(t)
-        print(n)
+        print("stage: ", t, "node: ", n, "process", pid)
 
         def bound_P(_b, i, r, d, s):
             if i in m.old:
