@@ -27,18 +27,24 @@ from backward_SDDiP import backward_pass
 
 # Define case-study
 curPath = os.path.abspath(os.path.curdir)
+# filepath = os.path.join(curPath, 'data/GTEP_data_10years.db')
 filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
-print(filepath)
-time_periods = 5
-stages = range(1, time_periods + 1)
+n_stages = 5  # number od stages in the scenario tree
+stages = range(1, n_stages + 1)
 scenarios = ['L', 'M', 'H']
 single_prob = {'L': 1 / 3, 'M': 1 / 3, 'H': 1 / 3}
 
+# time_periods = 10
+time_periods = 5
+set_time_periods = range(1, time_periods + 1)
+# t_per_stage = {1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10]}
+t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
+
 # Define parameters of the decomposition
 max_iter = 10
-opt_tol = 20  # %
+opt_tol = 5  # %
 ns = 10  # Number of scenarios solved per Forward/Backward Pass per process
-# NOTE: ns should be between 1 and len(n_stage[time_periods])
+# NOTE: ns should be between 1 and len(n_stage[n_stages])
 z_alpha_2 = 1.96  # 95% confidence level
 
 # Parallel parameters
@@ -48,7 +54,7 @@ NumProcesses = 3
 
 # create scenarios and input data
 nodes, n_stage, parent_node, children_node, prob, sc_nodes = create_scenario_tree(stages, scenarios, single_prob)
-readData.read_data(filepath, stages, n_stage)
+readData.read_data(filepath, stages, n_stage, t_per_stage)
 sc_headers = list(sc_nodes.keys())
 
 # separate nodes by processes
@@ -78,8 +84,9 @@ for pid in scenarios_by_processid.keys():
 # Split uncertain parameter by processes
 L_max_scenario_pid = {}
 for pid in scenarios_by_processid.keys():
-    L_max_scenario_pid[pid] = {(stage, node): readData.L_max_s[stage, node] for stage in stages
-                               for node in n_stage[stage] if node in nodes_by_processid[pid]}
+    L_max_scenario_pid[pid] = {(t, stage, node): readData.L_max_s[t, stage, node] for stage in stages
+                               for node in n_stage[stage] if node in nodes_by_processid[pid]
+                               for t in t_per_stage[stage]}
 # print(L_max_scenario_pid)
 
 # Shared data among processes
@@ -91,6 +98,12 @@ mltp_o_th = pymp.shared.dict()
 cost_backward = pymp.shared.dict()
 barrier_flag = pymp.shared.list([0] * (NumProcesses + 1))
 if_converged = pymp.shared.dict()
+
+# Map stage by time_period
+stage_per_t = {t: k for k, v in t_per_stage.items() for t in v}
+
+
+# print(stage_per_t)
 
 
 class Barrier:
@@ -123,13 +136,13 @@ with pymp.Parallel(NumProcesses) as p:
     pid = p.thread_num
 
     # create blocks
-    m = b.create_model(time_periods, max_iter, n_stage_processid[pid], nodes_by_processid[pid],
+    m = b.create_model(n_stages, time_periods, t_per_stage, max_iter, n_stage_processid[pid], nodes_by_processid[pid],
                        L_max_scenario_pid[pid], pid)
     start_time = time.time()
 
     # Decomposition Parameters
-    m.ngo_rn_par = Param(m.rn_r, m.n_stage, default=0, initialize=0, mutable=True)
-    m.ngo_th_par = Param(m.th_r, m.n_stage, default=0, initialize=0, mutable=True)
+    m.ngo_rn_par = Param(m.rn_r, m.t_node, default=0, initialize=0, mutable=True)
+    m.ngo_th_par = Param(m.th_r, m.t_node, default=0, initialize=0, mutable=True)
     m.cost = Param(m.n_stage, m.iter, default=0, initialize=0, mutable=True)
 
     # Parameters to compute upper and lower bounds
@@ -151,19 +164,21 @@ with pymp.Parallel(NumProcesses) as p:
         b.dual = Suffix(direction=Suffix.IMPORT)
 
     # Add equality constraints
-    for t in m.t:
-        for n in n_stage_processid[pid][t]:
-            if t != 1:
+    for stage in m.stages:
+        for n in n_stage_processid[pid][stage]:
+            if stage != 1:
+                t_prev = t_per_stage[stage - 1][-1]
+                # print('stage', stage, 't_prev', t_prev)
                 for (rn, r) in m.rn_r:
-                    for pn in n_stage_processid[pid][t - 1]:
+                    for pn in n_stage_processid[pid][stage - 1]:
                         if pn in parent_node[n]:
-                            m.Bl[t, n].link_equal1.add(expr=(m.Bl[t, n].ngo_rn_prev[rn, r] ==
-                                                             m.ngo_rn_par[rn, r, t - 1, pn]))
+                            m.Bl[stage, n].link_equal1.add(expr=(m.Bl[stage, n].ngo_rn_prev[rn, r] ==
+                                                                 m.ngo_rn_par[rn, r, t_prev, pn]))
                 for (th, r) in m.th_r:
-                    for pn in n_stage_processid[pid][t - 1]:
+                    for pn in n_stage_processid[pid][stage - 1]:
                         if pn in parent_node[n]:
-                            m.Bl[t, n].link_equal2.add(expr=(m.Bl[t, n].ngo_th_prev[th, r] ==
-                                                             m.ngo_th_par[th, r, t - 1, pn]))
+                            m.Bl[stage, n].link_equal2.add(expr=(m.Bl[stage, n].ngo_th_prev[th, r] ==
+                                                                 m.ngo_th_par[th, r, t_prev, pn]))
 
     # Stochastic Dual Dynamic integer Programming Algorithm (SDDiP)
     for iter_ in m.iter:
@@ -177,35 +192,37 @@ with pymp.Parallel(NumProcesses) as p:
             n = scenarios_by_processid[pid][i]
             sampled_scenarios[n] = sc_nodes[n]
             scenarios_iter[iter_][n] = list(sampled_scenarios[n])
-        for t in m.t:
+        for stage in stages:
             for n in list(sampled_scenarios.keys()):
-                s_sc = sampled_scenarios[n][len(m.t) - t]
+                s_sc = sampled_scenarios[n][n_stages - stage]
                 if s_sc not in sampled_nodes:
                     sampled_nodes.append(s_sc)
-                sampled_nodes_stage[t] = sampled_nodes
+                sampled_nodes_stage[stage] = sampled_nodes
             sampled_nodes = []
 
         # Forward Pass
-        for t in m.t:
-            for n in sampled_nodes_stage[t]:
-                print("Forward Pass: ", "Time period", t, "Current Node", n)
+        for stage in m.stages:
+            for n in sampled_nodes_stage[stage]:
+                print("Forward Pass: ", "Stage", stage, "Current Node", n)
 
-                ngo_rn, ngo_th, cost = forward_pass(m.Bl[t, n], rn_r, th_r)
+                ngo_rn, ngo_th, cost = forward_pass(m.Bl[stage, n], rn_r, th_r, t_per_stage[stage])
 
-                for (rn, r) in rn_r:
-                    ngo_rn_par_k[rn, r, t, n, iter_] = ngo_rn[rn, r]
-                    m.ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r]
-                for (th, r) in th_r:
-                    ngo_th_par_k[th, r, t, n, iter_] = ngo_th[th, r]
-                    m.ngo_th_par[th, r, t, n] = ngo_th[th, r]
-                cost_forward[t, n, iter_] = cost
-                print('cost', cost_forward[t, n, iter_])
+                for t in t_per_stage[stage]:
+                    for (rn, r) in rn_r:
+                        ngo_rn_par_k[rn, r, t, n, iter_] = ngo_rn[rn, r, t]
+                        m.ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r, t]
+                    for (th, r) in th_r:
+                        ngo_th_par_k[th, r, t, n, iter_] = ngo_th[th, r, t]
+                        m.ngo_th_par[th, r, t, n] = ngo_th[th, r, t]
+                cost_forward[stage, n, iter_] = cost
+                print('cost', cost_forward[stage, n, iter_])
 
         # Compute cost per scenario solved inside of a process
         for s_sc in list(sampled_scenarios.keys()):
             cost_scenario_forward[s_sc, iter_] = 0
-            for t in m.t:
-                cost_scenario_forward[s_sc, iter_] += cost_forward[t, sampled_scenarios[s_sc][len(m.t) - t], iter_]
+            for stage in m.stages:
+                cost_scenario_forward[s_sc, iter_] += \
+                    cost_forward[stage, sampled_scenarios[s_sc][len(m.stages) - stage], iter_]
         # print(cost_scenario_forward)
 
         print("thread %s completed forward pass" % p.thread_num)
@@ -240,53 +257,57 @@ with pymp.Parallel(NumProcesses) as p:
         m.k.add(iter_)
 
         sampled_nodes_globally = [(t, n) for (rn, r, t, n, it) in ngo_rn_par_k.keys() if it == iter_]
-        sampled_nodes_globally_stage = {t: [] for t in stages}
+        sampled_nodes_globally_stage = {stage: [] for stage in stages}
         for key in sampled_nodes_globally:
-            t_ = key[0]
+            stage_ = stage_per_t[key[0]]
             n_ = key[1]
-            if n_ not in sampled_nodes_globally_stage[t_]:
-                sampled_nodes_globally_stage[t_].append(n_)
+            if n_ not in sampled_nodes_globally_stage[stage_]:
+                sampled_nodes_globally_stage[stage_].append(n_)
         # print(sampled_nodes_globally_stage)
 
-        for t in reversed(list(m.t)):
-            for n in sampled_nodes_stage[t]:
-                print("Backward Pass:", "Time period", t, "Current Node", n)
+        for stage in reversed(list(m.stages)):
+            for n in sampled_nodes_stage[stage]:
+                print("Backward Pass:", "Stage", stage, "Current Node", n)
                 # print("Current thread", pp.thread_num)
 
-                mltp_rn, mltp_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
+                mltp_rn, mltp_th, cost = backward_pass(stage, m.Bl[stage, n], n_stages, rn_r, th_r)
 
-                cost_backward[t, n, iter_] = cost
-                print('cost', t, n, cost_backward[t, n, iter_])
+                cost_backward[stage, n, iter_] = cost
+                print('cost', stage, n, cost_backward[stage, n, iter_])
 
-                if t != 1:
+                if stage != 1:
                     for (rn, r) in rn_r:
-                        mltp_o_rn[rn, r, t, n, iter_] = mltp_rn[rn, r]
+                        mltp_o_rn[rn, r, stage, n, iter_] = mltp_rn[rn, r]
                     for (th, r) in th_r:
-                        mltp_o_th[th, r, t, n, iter_] = mltp_th[th, r]
+                        mltp_o_th[th, r, stage, n, iter_] = mltp_th[th, r]
 
             solve_barrier.wait()
 
-            if t != 1:
-                for pn in sampled_nodes_stage[t - 1]:
+            if stage != 1:
+                for pn in sampled_nodes_stage[stage - 1]:
+                    t = t_per_stage[stage][0]
+                    t_prev = t_per_stage[stage - 1][-1]
                     # add Benders cut for current iteration
-                    m.Bl[t - 1, pn].fut_cost.add(expr=(m.Bl[t - 1, pn].alphafut >=
-                                                       (1 / len(sampled_nodes_globally_stage[t])) *
-                                                       sum(cost_backward[t, n_, iter_]
-                                                           + sum(mltp_o_rn[rn, r, t, n_, iter_] *
-                                                                 (ngo_rn_par_k[rn, r, t - 1, pn, iter_] -
-                                                                  m.Bl[t - 1, pn].ngo_rn[rn, r]) for rn, r in m.rn_r)
-                                                           + sum(mltp_o_th[th, r, t, n_, iter_] *
-                                                                 (ngo_th_par_k[th, r, t - 1, pn, iter_] -
-                                                                  m.Bl[t - 1, pn].ngo_th[th, r]) for th, r in m.th_r)
-                                                           for n_ in sampled_nodes_globally_stage[t])))
+                    m.Bl[stage - 1, pn].fut_cost.add(expr=(m.Bl[stage - 1, pn].alphafut >=
+                                                           (1 / len(sampled_nodes_globally_stage[stage])) *
+                                                           sum(cost_backward[stage, n_, iter_]
+                                                               + sum(mltp_o_rn[rn, r, stage, n_, iter_] *
+                                                                     (ngo_rn_par_k[rn, r, t_prev, pn, iter_] -
+                                                                      m.Bl[stage - 1, pn].ngo_rn[rn, r, t_prev])
+                                                                     for rn, r in m.rn_r)
+                                                               + sum(mltp_o_th[th, r, stage, n_, iter_] *
+                                                                     (ngo_th_par_k[th, r, t_prev, pn, iter_] -
+                                                                      m.Bl[stage - 1, pn].ngo_th[th, r, t_prev])
+                                                                     for th, r in m.th_r)
+                                                               for n_ in sampled_nodes_globally_stage[stage])))
 
                 # m.Bl[t, n].fut_cost.pprint()
 
             calc_barrier.wait()
-            print("thread %s completed calculation phase for stage" % p.thread_num, t)
+            print("thread %s completed calculation phase for stage" % p.thread_num, stage)
 
         solve_barrier.wait()
-        print("thread %s completed solve phase for stage" % p.thread_num, t)
+        print("thread %s completed backward pass" % p.thread_num)
 
         if p.thread_num == 0:
             # Compute lower bound
@@ -299,14 +320,15 @@ with pymp.Parallel(NumProcesses) as p:
             if gap[iter_] <= opt_tol:
                 with open('results.csv', mode='w') as results_file:
                     results_writer = csv.writer(results_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                    for t in m.t:
-                        for n in sampled_nodes_globally_stage[t]:
-                            for (rn, r) in rn_r:
-                                if ngo_rn_par_k[rn, r, t, n, iter_] != 0:
-                                    results_writer.writerow([rn, r, t, n, ngo_rn_par_k[rn, r, t, n, iter_]])
-                            for (th, r) in th_r:
-                                if ngo_th_par_k[th, r, t, n, iter_] != 0:
-                                    results_writer.writerow([th, r, t, n, ngo_th_par_k[th, r, t, n, iter_]])
+                    for stage in stages:
+                        for n in sampled_nodes_globally_stage[stage]:
+                            for t in t_per_stage[stage]:
+                                for (rn, r) in rn_r:
+                                    if ngo_rn_par_k[rn, r, t, n, iter_] != 0:
+                                        results_writer.writerow([rn, r, t, n, ngo_rn_par_k[rn, r, t, n, iter_]])
+                                for (th, r) in th_r:
+                                    if ngo_th_par_k[th, r, t, n, iter_] != 0:
+                                        results_writer.writerow([th, r, t, n, ngo_th_par_k[th, r, t, n, iter_]])
                 if_converged[iter_] = True
             else:
                 if_converged[iter_] = False
@@ -332,4 +354,3 @@ with pymp.Parallel(NumProcesses) as p:
 
     print("thread %s completed calculation phase" % p.thread_num)
     calc_barrier.wait()
-

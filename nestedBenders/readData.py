@@ -2,7 +2,7 @@ import sqlite3 as sql
 import os.path
 
 
-def read_data(database_file, stages, n_stage):
+def read_data(database_file, stages, n_stage, t_per_stage):
     # print(os.path.exists(database_file))
     # print(database_file)
     conn = sql.connect(database_file)
@@ -64,19 +64,21 @@ def read_data(database_file, stages, n_stage):
     # print(L_max_scenario)
 
     L_max_s = {}
-    for t in stages:
-        for n in n_stage[t]:
-            if t == 1:
-                L_max_s[t, n] = L_max_scenario['M'][t]
-            else:
-                m = n[-1]
-                if m == 'L':
-                    L_max_s[t, n] = L_max_scenario['L'][t]
-                elif m == 'M':
-                    L_max_s[t, n] = L_max_scenario['M'][t]
-                elif m == 'H':
-                    L_max_s[t, n] = L_max_scenario['H'][t]
+    for stage in stages:
+        for n in n_stage[stage]:
+            for t in t_per_stage[stage]:
+                if stage == 1:
+                    L_max_s[t, stage, n] = L_max_scenario['M'][t]
+                else:
+                    m = n[-1]
+                    if m == 'L':
+                        L_max_s[t, stage, n] = L_max_scenario['L'][t]
+                    elif m == 'M':
+                        L_max_s[t, stage, n] = L_max_scenario['M'][t]
+                    elif m == 'H':
+                        L_max_s[t, stage, n] = L_max_scenario['H'][t]
     globals()["L_max_s"] = L_max_s
+    # print(L_max_s)
 
     # Different scenarios for carbon tax:
     # tx_CO2_scenario = {'L': 0, 'M': 0.025, 'H': 0.050}

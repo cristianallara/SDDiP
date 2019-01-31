@@ -3,8 +3,8 @@ __author__ = "Cristiana L. Lara"
 from pyomo.environ import *
 
 
-def backward_pass(t, bl, time_periods, rn_r, th_r):
-    if t == time_periods:
+def backward_pass(stage, bl, n_stages, rn_r, th_r):
+    if stage == n_stages:
         bl.alphafut.fix(0)
     else:
         bl.alphafut.unfix()
@@ -19,7 +19,7 @@ def backward_pass(t, bl, time_periods, rn_r, th_r):
     mltp_o_rn = {}
     mltp_o_th = {}
 
-    if t != 1:
+    if stage != 1:
         # Get Lagrange multiplier from linking equality
         for rn_r_index in range(len(rn_r)):
             i = rn_r[rn_r_index][0]
