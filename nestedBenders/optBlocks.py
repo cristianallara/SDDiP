@@ -13,6 +13,50 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, L_
     m = ConcreteModel()
 
     # ################################## Declare of sets ##################################
+    '''
+        Set Notation:
+        m.r: regions
+
+        m.i: generators
+        m.th: thermal generators
+        m.rn: renewable generators
+        m.co: coal-based generators
+            coal-st-old1: cluster of existing coal steam turbine generators
+            coal-igcc-new: cluster of potential coal IGCC generators
+            coal-igcc-ccs-new: cluster of potential coal IGCC generators with carbon capture
+        m.ng: natural gas (NG) generators
+            ng-ct-old: cluster of existing NG combustion-fired turbine generators
+            ng-cc-old: cluster of existing NG combined-cycle generators
+            ng-st-old: cluster of existing NG steam-turbine generators
+            ng-cc-new: cluster of potential NG combined-cycle generators
+            ng-cc-ccs-new: cluster of potential NG combined-cycle generators with carbon capture
+            ng-ct-new: cluster of potential NG combustion-fired turbine generators
+        m.nu: nuclear generators
+            nuc-st-old: cluster of existing nuclear steam turbine generators
+            nuc-st-new: cluster of potential nuclear steam turbine generators
+        m.pv: solar photovoltaic generators
+            pv-old: cluster of existing solar photovoltaic generators
+            pv-new: cluster of potential solar photovoltaic generators
+        m.csp: concentrated solar panels
+            csp-new: cluster of potential concentrated solar panels
+        m.wi: wind turbines
+            wind-old: cluster of existing wind turbines
+            wind-new: cluster of potential wind turbines
+        m.old: subset of existing generators
+        m.new: subset of potential generators
+        m.rold: subset of existing renewable generators
+        m.rnew: subset of potential renewable generators
+        m.told: subset of existing thermal generators
+        m.tnew: subset of potential thermal generators
+
+        m.d: set of representative days
+
+        m.hours: set of subperiods within the days
+
+        m.t: set of time periods
+
+        m.stage: set of stages in the scenario tree
+    '''
     m.r = Set(initialize=['Northeast', 'West', 'Coastal', 'South', 'Panhandle'], ordered=True)
     m.i = Set(initialize=['coal-st-old1', 'ng-ct-old', 'ng-cc-old', 'ng-st-old', 'nuc-st-old', 'pv-old', 'wind-old',
                           'nuc-st-new', 'wind-new', 'pv-new', 'csp-new', 'coal-igcc-new', 'coal-igcc-ccs-new',
@@ -82,6 +126,52 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, L_
         return th in m.tnew or (th in m.told and m.Ng_old[th, r] != 0)
 
     m.th_r = Set(initialize=m.th * m.r, filter=th_r_filter, ordered=True)
+
+    '''
+    Parameter notation
+    
+    m.L: load demand in region r in sub-period s of representative day d of year t (MW)
+    m.n_d: weight of representative day d
+    m.L_max: peak load in year t (MW)
+    m.cf: capacity factor of renewable generation cluster i in region r at sub-period s, of representative day d of r
+        year t (fraction of the nameplate capacity)
+    m.Qg_np: generator nameplate capacity
+    m.Ng_max: max number of generators in cluster i of region r
+    m.Qinst_UB: Yearly upper bound on installation capacity by generator type
+    m.LT: expected lifetime of generation cluster i (years)
+    m.Tremain: remaining time until the end of the time horizon at year t (years)
+    m.Ng_r: number of generators in cluster i of region r that achieved their expected lifetime
+    m.q_v: capacity value of generation cluster i (fraction of the nameplate capacity)
+    m.Pg_min: minimum operating output of a generator in cluster i ∈ ITH (fraction of the nameplate capacity)
+    m.Ru_max: maximum ramp-up rate for cluster i ∈ ITH (fraction of nameplate capacity)
+    m.Rd_max: maximum ramp-down rate for cluster i ∈ ITH (fraction of nameplate capacity)
+    m.f_start: fuel usage at startup (MMbtu/MW)
+    m.C_start: 􏰄xed startup cost for generator cluster i ($/MW)
+    m.frac_spin: maximum fraction of nameplate capacity of each generator that can contribute to spinning reserves
+        (fraction of nameplate capacity)
+    m.frac_Qstart: maximum fraction of nameplate capacity of each generator that can contribute to quick-start reserves
+        (fraction of nameplate capacity)
+    m.t_loss: transmission loss factor between region r and region r ̸= r (%/miles)
+    m.t_up: transmission line capacity
+    m.dist: distance between region r and region r′ ̸= r (miles)
+    m.if_: discount factor for year t
+    m.ED: energy demand during year t (MWh)
+    m.Rmin: system's minimum reserve margin for year t (fraction of the peak load)
+    m.hr: heat rate of generator cluster i (MMBtu/MWh)
+    m.P_fuel: price of fuel for generator cluster i in year t ($/MMBtu)
+    m.EF_CO2: full lifecycle CO2 emission factor for generator cluster i (kgCO2/MMBtu)
+    m.FOC: 􏰄xed operating cost of generator cluster i ($/MW)
+    m.VOC: variable O&M cost of generator cluster i ($/MWh)
+    m.CCm: capital cost multiplier of generator cluster i (unitless)
+    m.DIC: discounted investment cost of generator cluster i in year t ($/MW)
+    m.LEC: life extension cost for generator cluster i (fraction of the investment cost of corresponding new generator)
+    m.PEN: penalty for not meeting renewable energy quota target during year t ($/MWh)
+    m.PENc: penalty for curtailment during year t ($/MWh)
+    m.tx_CO2: carbon tax in year t ($/kg CO2)
+    m.RES_min: minimum renewable energy production requirement during year t (fraction of annual energy demand)
+    m.hs: duration of sub-period s (hours)
+    m.ir: interest rate
+    '''
 
     m.L = Param(m.r, m.t, m.d, m.hours, default=0, initialize=readData.L)
     m.n_d = Param(m.d, default=0, initialize=readData.n_ss)
@@ -209,6 +299,35 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, L_
                 return 0, m.Ng_old[th, r]
             else:
                 return 0, m.Ng_max[th, r]
+
+        '''
+        Variables notation:
+        b.P: power output of generation cluster i in region r during sub-period s of representative day d of year t (MW)
+        b.cu: curtailment slack generation in region r during sub-period s of representative day d of year t (MW)
+        b.RES_def: de􏰂cit from renewable energy quota target during year t (MWh)
+        b.P_flow: power transfer from region r to region r̸=r during sub-period s of representative day d of year t (MW)
+        b.Q_spin:spinning reserve capacity of generation cluster i in region r during sub-period s of representative day 
+            d of year t (MW)
+        b.Q_Qstart: quick-start capacity reserve of generation cluster i in region r during sub-period s of 
+            representative day d of year t (MW)
+        b.ngr_rn: number of generators that retire in cluster i ∈ IRN of region r in year t (continuous relaxation)
+        b.nge_rn: number of generators that had their life extended in cluster i ∈ IRN of region r in year t 
+            (continuous relaxation)
+        b.ngb_rn: number of generators that are built in cluster i ∈ IRN of region r in year t (continuous relaxation)
+        b.ngo_rn: number of generators that are operational in cluster i ∈ IRN of region r in year t (continuous r
+            relaxation)
+        b.ngr_th: number of generators that retire in cluster i ∈ ITH of region r in year t (integer variable)
+        b.nge_th: number of generators that had their life extended in cluster i ∈ ITH of region r in year t (integer r
+            variable)
+        b.ngb_th: number of generators that are built in cluster i ∈ ITH of region r in year t (integer variable) r
+        b.ngo_th: number of generators that are operational in cluster i ∈ ITH of region r in year t (integer variable)
+        b.u: number of thermal generators ON in cluster i ∈ Ir of region r during sub-period s of representative day 
+            d of year t (integer variable)
+        b.su: number of generators starting up in cluster i during sub-period s of representative day d in year t 
+            (integer variable)
+        b.sd: number of generators shutting down in cluster i during sub-period s of representative day d in year t 
+            (integer variable)
+        '''
 
         b.P = Var(m.i_r, t_per_stage[stage], m.d, m.hours, within=NonNegativeReals, bounds=bound_P)
         b.cu = Var(m.r, t_per_stage[stage], m.d, m.hours, within=NonNegativeReals)
@@ -470,45 +589,3 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, L_
 
     return m
 
-    # Set Notation:
-    #     m.r: regions
-    #
-    #     m.i: generators
-    #     m.th: thermal generators
-    #     m.rn: renewable generators
-    #     m.co: coal-based generators
-    #         coal-st-old1: cluster of existing coal steam turbine generators
-    #         coal-igcc-new: cluster of potential coal IGCC generators
-    #         coal-igcc-ccs-new: cluster of potential coal IGCC generators with carbon capture
-    #     m.ng: natural gas (NG) generators
-    #         ng-ct-old: cluster of existing NG combustion-fired turbine generators
-    #         ng-cc-old: cluster of existing NG combined-cycle generators
-    #         ng-st-old: cluster of existing NG steam-turbine generators
-    #         ng-cc-new: cluster of potential NG combined-cycle generators
-    #         ng-cc-ccs-new: cluster of potential NG combined-cycle generators with carbon capture
-    #         ng-ct-new: cluster of potential NG combustion-fired turbine generators
-    #     m.nu: nuclear generators
-    #         nuc-st-old: cluster of existing nuclear steam turbine generators
-    #         nuc-st-new: cluster of potential nuclear steam turbine generators
-    #     m.pv: solar photovoltaic generators
-    #         pv-old: cluster of existing solar photovoltaic generators
-    #         pv-new: cluster of potential solar photovoltaic generators
-    #     m.csp: concentrated solar panels
-    #         csp-new: cluster of potential concentrated solar panels
-    #     m.wi: wind turbines
-    #         wind-old: cluster of existing wind turbines
-    #         wind-new: cluster of potential wind turbines
-    #     m.old: subset of existing generators
-    #     m.new: subset of potential generators
-    #     m.rold: subset of existing renewable generators
-    #     m.rnew: subset of potential renewable generators
-    #     m.told: subset of existing thermal generators
-    #     m.tnew: subset of potential thermal generators
-    #
-    #     m.d: set of representative days
-    #
-    #     m.hours: set of subperiods within the days
-    #
-    #     m.t: set of time periods
-    #
-    #     m.stage: set of stages in the scenario tree
