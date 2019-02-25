@@ -28,7 +28,8 @@ from backward_SDDiP import backward_pass
 # Define case-study
 curPath = os.path.abspath(os.path.curdir)
 # filepath = os.path.join(curPath, 'data/GTEP_data_10years.db')
-filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
+# filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
+filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
 n_stages = 5  # number od stages in the scenario tree
 stages = range(1, n_stages + 1)
 scenarios = ['L', 'M', 'H']
@@ -41,9 +42,9 @@ set_time_periods = range(1, time_periods + 1)
 t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
 
 # Define parameters of the decomposition
-max_iter = 10
-opt_tol = 5  # %
-ns = 10  # Number of scenarios solved per Forward/Backward Pass per process
+max_iter = 100
+opt_tol = 1  # %
+ns = 7  # Number of scenarios solved per Forward/Backward Pass per process
 # NOTE: ns should be between 1 and len(n_stage[n_stages])
 z_alpha_2 = 1.96  # 95% confidence level
 
@@ -81,6 +82,14 @@ for pid in scenarios_by_processid.keys():
                 n_stage_processid[pid][stage].append(node)
 # print(n_stage_processid.keys())
 
+pids_with_node_n = {n: [] for n in nodes}
+for pid in range(NumProcesses):
+    for stage in range(1, n_stages+1):
+        for n in n_stage_processid[pid][stage]:
+            pids_with_node_n[n].append(pid)
+# print(pids_with_node_n)
+
+
 # Split uncertain parameter by processes
 L_max_scenario_pid = {}
 for pid in scenarios_by_processid.keys():
@@ -98,11 +107,10 @@ mltp_o_th = pymp.shared.dict()
 cost_backward = pymp.shared.dict()
 barrier_flag = pymp.shared.list([0] * (NumProcesses + 1))
 if_converged = pymp.shared.dict()
+# sampled_nodes_globally_pid_stage = pymp.shared.dict()
 
 # Map stage by time_period
 stage_per_t = {t: k for k, v in t_per_stage.items() for t in v}
-
-
 # print(stage_per_t)
 
 
@@ -227,7 +235,6 @@ with pymp.Parallel(NumProcesses) as p:
 
         print("thread %s completed forward pass" % p.thread_num)
         solve_barrier.wait()
-        print("thread %s starting calculation phase" % p.thread_num)
 
         if p.thread_num == 0:
             # Compute statistical upper bound
@@ -263,45 +270,59 @@ with pymp.Parallel(NumProcesses) as p:
             n_ = key[1]
             if n_ not in sampled_nodes_globally_stage[stage_]:
                 sampled_nodes_globally_stage[stage_].append(n_)
+
         # print(sampled_nodes_globally_stage)
 
         for stage in reversed(list(m.stages)):
-            for n in sampled_nodes_stage[stage]:
-                print("Backward Pass:", "Stage", stage, "Current Node", n)
-                # print("Current thread", pp.thread_num)
+            if stage != n_stages:
+                for n in sampled_nodes_stage[stage]:
+                    print("Backward Pass:", "Stage", stage, "Current Node", n)
+                    if len(pids_with_node_n[n]) == 1:
+                        for cn in children_node[n]:
+                            print("Children Node", cn, "of stage", stage + 1)
 
-                mltp_rn, mltp_th, cost = backward_pass(stage, m.Bl[stage, n], n_stages, rn_r, th_r)
+                            mltp_rn, mltp_th, cost = backward_pass(stage, m.Bl[stage + 1, cn], n_stages, rn_r, th_r)
 
-                cost_backward[stage, n, iter_] = cost
-                print('cost', stage, n, cost_backward[stage, n, iter_])
+                            cost_backward[stage + 1, cn, iter_] = cost
+                            print('cost', stage + 1, cn, cost_backward[stage + 1, cn, iter_])
 
-                if stage != 1:
-                    for (rn, r) in rn_r:
-                        mltp_o_rn[rn, r, stage, n, iter_] = mltp_rn[rn, r]
-                    for (th, r) in th_r:
-                        mltp_o_th[th, r, stage, n, iter_] = mltp_th[th, r]
+                            for (rn, r) in rn_r:
+                                mltp_o_rn[rn, r, stage + 1, cn, iter_] = mltp_rn[rn, r]
+                            for (th, r) in th_r:
+                                mltp_o_th[th, r, stage + 1, cn, iter_] = mltp_th[th, r]
+                    else:
+                        for cn in children_node[n]:
+                            if cn in nodes_by_processid[pid]:
+                                print("Children Node", cn, "of stage", stage + 1)
 
-            solve_barrier.wait()
+                                mltp_rn, mltp_th, cost = backward_pass(stage + 1, m.Bl[stage + 1, cn], n_stages, rn_r, th_r)
 
-            if stage != 1:
-                for pn in sampled_nodes_stage[stage - 1]:
-                    t = t_per_stage[stage][0]
-                    t_prev = t_per_stage[stage - 1][-1]
-                    # add Benders cut for current iteration
-                    m.Bl[stage - 1, pn].fut_cost.add(expr=(m.Bl[stage - 1, pn].alphafut >=
-                                                           (1 / len(sampled_nodes_globally_stage[stage])) *
-                                                           sum(cost_backward[stage, n_, iter_]
-                                                               + sum(mltp_o_rn[rn, r, stage, n_, iter_] *
-                                                                     (ngo_rn_par_k[rn, r, t_prev, pn, iter_] -
-                                                                      m.Bl[stage - 1, pn].ngo_rn[rn, r, t_prev])
-                                                                     for rn, r in m.rn_r)
-                                                               + sum(mltp_o_th[th, r, stage, n_, iter_] *
-                                                                     (ngo_th_par_k[th, r, t_prev, pn, iter_] -
-                                                                      m.Bl[stage - 1, pn].ngo_th[th, r, t_prev])
-                                                                     for th, r in m.th_r)
-                                                               for n_ in sampled_nodes_globally_stage[stage])))
+                                cost_backward[stage + 1, cn, iter_] = cost
+                                print('cost', stage + 1, cn, cost_backward[stage + 1, cn, iter_])
 
-                # m.Bl[t, n].fut_cost.pprint()
+                                for (rn, r) in rn_r:
+                                    mltp_o_rn[rn, r, stage + 1, cn, iter_] = mltp_rn[rn, r]
+                                for (th, r) in th_r:
+                                    mltp_o_th[th, r, stage + 1, cn, iter_] = mltp_th[th, r]
+                    calc_barrier.wait()
+
+                solve_barrier.wait()
+
+                for n in n_stage_processid[pid][stage]:  # sampled_nodes_stage[stage]:
+                    for n_ in sampled_nodes_globally_stage[stage]:
+                        # add Benders cut for current iteration
+                        t = t_per_stage[stage][-1]
+                        m.Bl[stage, n].fut_cost.add(expr=(m.Bl[stage, n].alphafut >=
+                                                          sum((prob[cn] / prob[n_]) * cost_backward[stage + 1, cn, iter_]
+                                                              + sum((prob[cn] / prob[n_]) *
+                                                                    mltp_o_rn[rn, r, stage + 1, cn, iter_] *
+                                                                    (ngo_rn_par_k[rn, r, t, n_, iter_] -
+                                                                     m.Bl[stage, n].ngo_rn[rn, r, t]) for rn, r in m.rn_r)
+                                                              + sum((prob[cn] / prob[n_]) *
+                                                                    mltp_o_th[th, r, stage + 1, cn, iter_] *
+                                                                    (ngo_th_par_k[th, r, t, n_, iter_] -
+                                                                     m.Bl[stage, n].ngo_th[th, r, t]) for th, r in m.th_r)
+                                                              for cn in children_node[n_])))
 
             calc_barrier.wait()
             print("thread %s completed calculation phase for stage" % p.thread_num, stage)
@@ -310,6 +331,11 @@ with pymp.Parallel(NumProcesses) as p:
         print("thread %s completed backward pass" % p.thread_num)
 
         if p.thread_num == 0:
+            # Solve last node:
+            opt = SolverFactory('gurobi')
+            opt.solve(m.Bl[1, 'O'])
+            cost_backward[1, 'O', iter_] = m.Bl[1, 'O'].obj()
+
             # Compute lower bound
             cost_LB[iter_] = cost_backward[1, 'O', iter_]
             print(cost_LB)
@@ -354,3 +380,6 @@ with pymp.Parallel(NumProcesses) as p:
 
     print("thread %s completed calculation phase" % p.thread_num)
     calc_barrier.wait()
+
+
+

@@ -22,17 +22,22 @@ from backward_SDDiP import backward_pass
 # USER-DEFINED PARAMS
 
 curPath = os.path.abspath(os.path.curdir)
-filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
+filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
 print(filepath)
-time_periods = 5
-stages = range(1, time_periods + 1)
+n_stages = 5  # number od stages in the scenario tree
+stages = range(1, n_stages + 1)
 scenarios = ['L', 'M', 'H']
 single_prob = {'L': 1 / 3, 'M': 1 / 3, 'H': 1 / 3}
+
+time_periods = 5
+set_time_periods = range(1, time_periods + 1)
+# t_per_stage = {1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10]}
+t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
 
 # Define parameters of the decomposition
 max_iter = 50
 opt_tol = 1  # %
-ns = 20  # Number of scenarios solved per Forward/Backward Pass
+ns = 30  # Number of scenarios solved per Forward/Backward Pass
 # NOTE: ns should be between 1 and len(n_stage[time_periods])
 z_alpha_2 = 1.96  # 95% confidence level
 
@@ -41,10 +46,10 @@ z_alpha_2 = 1.96  # 95% confidence level
 # create scenarios and input data
 nodes, n_stage, parent_node, children_node, prob, sc_nodes = create_scenario_tree(stages, scenarios, single_prob)
 sc_headers = list(sc_nodes.keys())
-readData.read_data(filepath, stages, n_stage)
+readData.read_data(filepath, stages, n_stage, t_per_stage)
 
 # create blocks
-m = b.create_model(time_periods, max_iter, n_stage, nodes, prob)
+m = b.create_model(n_stages, time_periods, t_per_stage, max_iter, n_stage, nodes, readData.L_max_s, 0)
 print('finished generating the blocks, started counting solution time')
 start_time = time.time()
 
@@ -79,19 +84,20 @@ for t in m.t:
         m.Bl[t, n].dual = Suffix(direction=Suffix.IMPORT)
 
 # Add equality constraints
-for t in m.t:
-    for n in n_stage[t]:
-        if t != 1:
+for stage in m.stages:
+    for n in n_stage[stage]:
+        if stage != 1:
+            t_prev = t_per_stage[stage - 1][-1]
             for (rn, r) in m.rn_r:
-                for pn in n_stage[t - 1]:
+                for pn in n_stage[stage - 1]:
                     if pn in parent_node[n]:
-                        m.Bl[t, n].link_equal1.add(expr=(m.Bl[t, n].ngo_rn_prev[rn, r] ==
-                                                         m.ngo_rn_par[rn, r, t - 1, pn]))
+                        m.Bl[stage, n].link_equal1.add(expr=(m.Bl[stage, n].ngo_rn_prev[rn, r] ==
+                                                         m.ngo_rn_par[rn, r, t_prev, pn]))
             for (th, r) in m.th_r:
-                for pn in n_stage[t - 1]:
+                for pn in n_stage[stage - 1]:
                     if pn in parent_node[n]:
-                        m.Bl[t, n].link_equal2.add(expr=(m.Bl[t, n].ngo_th_prev[th, r] ==
-                                                         m.ngo_th_par[th, r, t - 1, pn]))
+                        m.Bl[stage, n].link_equal2.add(expr=(m.Bl[stage, n].ngo_th_prev[th, r] ==
+                                                         m.ngo_th_par[th, r, t_prev, pn]))
 
 # Stochastic Dual Dynamic integer Programming Algorithm (SDDiP)
 for iter_ in m.iter:
@@ -114,9 +120,9 @@ for iter_ in m.iter:
         sampled_nodes = []
 
     # Forward Pass
-    for t in m.t:
-        for n in sampled_nodes_stage[t]:
-            print("Time period", t)
+    for stage in m.stages:
+        for n in sampled_nodes_stage[stage]:
+            print("Stage", stage)
             print("Current Node", n)
 
             # for value stochastic (delete this later)
@@ -129,30 +135,24 @@ for iter_ in m.iter:
             #         else:
             #             m.Bl[t, n].ngb_rn[rn, r].fix(0)
 
-            state_vars = [m.Bl[t, n].ngo_rn, m.Bl[t, n].ngo_th]
+            ngo_rn, ngo_th, cost = forward_pass(m.Bl[stage, n], rn_r, th_r, t_per_stage[stage])
+            # print(ngo_rn)
 
-            [ngo_rn, ngo_th], cost = forward_pass(m.Bl[t, n], state_vars, opt_tol=0.0001, time_limit=40)
-
-            if t != time_periods:
+            for t in t_per_stage[stage]:
                 for (rn, r) in rn_r:
-                    m.ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r]
-                    m.ngo_rn_par_k[rn, r, t, n, iter_] = ngo_rn[rn, r]
+                    m.ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r, t]
+                    m.ngo_rn_par_k[rn, r, t, n, iter_] = ngo_rn[rn, r, t]
                 for (th, r) in th_r:
-                    m.ngo_th_par[th, r, t, n] = ngo_th[th, r]
-                    m.ngo_th_par_k[th, r, t, n, iter_] = ngo_th[th, r]
-            else:
-                for (rn, r) in rn_r:
-                    m.ngo_rn_par[rn, r, t, n] = ngo_rn[rn, r]
-                for (th, r) in th_r:
-                    m.ngo_th_par[th, r, t, n] = ngo_th[th, r]
-            m.cost_t[t, n, iter_] = cost
-            print('cost', m.cost_t[t, n, iter_].value)
+                    m.ngo_th_par[th, r, t, n] = ngo_th[th, r, t]
+                    m.ngo_th_par_k[th, r, t, n, iter_] = ngo_th[th, r, t]
+            m.cost_t[stage, n, iter_] = cost
+            print('cost', m.cost_t[stage, n, iter_].value)
 
     # Compute cost per scenario solved
     for s_sc in list(sampled_scenarios.keys()):
         m.cost_scenario[s_sc, iter_] = 0
-        for t in m.t:
-            m.cost_scenario[s_sc, iter_] += m.cost_t[t, sampled_scenarios[s_sc][len(m.t) - t], iter_]
+        for stage in m.stages:
+            m.cost_scenario[s_sc, iter_] += m.cost_t[stage, sampled_scenarios[s_sc][len(m.stages) - stage], iter_]
         # print(s_sc, m.cost_scenario[s_sc, iter_].value)
 
     # Compute statistical upper bound
@@ -168,11 +168,11 @@ for iter_ in m.iter:
     print("CPU Time (s)", elapsed_time)
 
     # Backward Pass
-    m.k.add(iter_)
+    # m.k.add(iter_)
 
-    for t in reversed(list(m.t)):
-        for n in sampled_nodes_stage[t]:
-            print("Time period", t)
+    for stage in reversed(list(m.stages)):
+        for n in sampled_nodes_stage[stage]:
+            print("Stage", stage)
             print("Current Node", n)
 
             # for value stochastic
@@ -185,27 +185,28 @@ for iter_ in m.iter:
             #         else:
             #             m.Bl[t, n].ngb_rn[rn, r].fix(0)
 
-            mltp_rn, mltp_th, cost = backward_pass(t, m.Bl[t, n], time_periods, rn_r, th_r)
+            mltp_rn, mltp_th, cost = backward_pass(stage, m.Bl[stage, n], n_stages, rn_r, th_r)
 
-            m.cost[t, n, iter_] = cost
-            print('cost', t, n, m.cost[t, n, iter_].value)
+            m.cost[stage, n, iter_] = cost
+            print('cost', stage, n, m.cost[stage, n, iter_].value)
 
-            if t != 1:
+            if stage != 1:
                 for (rn, r) in rn_r:
-                    m.mltp_o_rn[rn, r, t, n, iter_] = mltp_rn[rn, r]
+                    m.mltp_o_rn[rn, r, stage, n, iter_] = mltp_rn[rn, r]
                 for (th, r) in th_r:
-                    m.mltp_o_th[th, r, t, n, iter_] = mltp_th[th, r]
-                for pn in sampled_nodes_stage[t-1]:
+                    m.mltp_o_th[th, r, stage, n, iter_] = mltp_th[th, r]
+                for pn in sampled_nodes_stage[stage-1]:
                     # add Benders cut for current iteration
-                    m.Bl[t-1, pn].fut_cost.add(expr=(m.Bl[t-1, pn].alphafut >= (1 / len(sampled_nodes_stage[t])) *
-                                                  sum(m.cost[t, n_, iter_]
-                                                      + sum(m.mltp_o_rn[rn, r, t, n_, iter_] *
-                                                            (m.ngo_rn_par_k[rn, r, t-1, pn, iter_] -
-                                                             m.Bl[t-1, pn].ngo_rn[rn, r]) for rn, r in m.rn_r)
-                                                      + sum(m.mltp_o_th[th, r, t, n_, iter_] *
-                                                            (m.ngo_th_par_k[th, r, t-1, pn, iter_] -
-                                                             m.Bl[t-1, pn].ngo_th[th, r]) for th, r in m.th_r)
-                                                      for n_ in sampled_nodes_stage[t])))
+                    t_prev = t_per_stage[stage - 1][-1]
+                    m.Bl[stage-1, pn].fut_cost.add(expr=(m.Bl[stage-1, pn].alphafut >= (1 / len(sampled_nodes_stage[stage])) *
+                                                  sum(m.cost[stage, n_, iter_]
+                                                      + sum(m.mltp_o_rn[rn, r, stage, n_, iter_] *
+                                                            (m.ngo_rn_par_k[rn, r, t_prev, pn, iter_] -
+                                                             m.Bl[stage-1, pn].ngo_rn[rn, r, t_prev]) for rn, r in m.rn_r)
+                                                      + sum(m.mltp_o_th[th, r, stage, n_, iter_] *
+                                                            (m.ngo_th_par_k[th, r, t_prev, pn, iter_] -
+                                                             m.Bl[stage-1, pn].ngo_th[th, r, t_prev]) for th, r in m.th_r)
+                                                      for n_ in sampled_nodes_stage[stage])))
             # m.Bl[t, n].fut_cost.pprint()
 
     # Compute lower bound
@@ -219,14 +220,16 @@ for iter_ in m.iter:
         # write results for state variables in a csv file
         with open('results.csv', mode='w') as results_file:
             results_writer = csv.writer(results_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            for t in m.t:
-                for n in sampled_nodes_stage[t]:
-                    for (rn, r) in rn_r:
-                        if m.ngo_rn_par[rn, r, t, n].value != 0:
-                            results_writer.writerow([rn, r, t, n, m.ngo_rn_par[rn, r, t, n].value])
-                    for (th, r) in th_r:
-                        if m.ngo_th_par[th, r, t, n].value != 0:
-                            results_writer.writerow([th, r, t, n, m.ngo_th_par[th, r, t, n].value])
+            for stage in m.stages:
+                for n in sampled_nodes_stage[stage]:
+                    for t in t_per_stage[stage]:
+                        for (rn, r) in rn_r:
+                            if m.ngo_rn_par[rn, r, t, n].value != 0:
+                                results_writer.writerow([rn, r, t, n, m.ngo_rn_par[rn, r, t, n].value])
+                        for (th, r) in th_r:
+                            if m.ngo_th_par[th, r, t, n].value != 0:
+                                results_writer.writerow([th, r, t, n, m.ngo_th_par[th, r, t, n].value])
+        last_iter = iter_
         break
 
     elapsed_time = time.time() - start_time
@@ -234,7 +237,7 @@ for iter_ in m.iter:
 
 elapsed_time = time.time() - start_time
 
-print("Upper Bound", m.cost_UB[iter_].value)
-print("Lower Bound", m.cost_LB[iter_].value)
-print("Optimality gap (%)", m.gap[iter_].value)
+print("Upper Bound", m.cost_UB[last_iter].value)
+print("Lower Bound", m.cost_LB[last_iter].value)
+print("Optimality gap (%)", m.gap[last_iter].value)
 print("CPU Time (s)", elapsed_time)
