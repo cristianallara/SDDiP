@@ -30,6 +30,7 @@ curPath = os.path.abspath(os.path.curdir)
 # filepath = os.path.join(curPath, 'data/GTEP_data_10years.db')
 # filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
 filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
+
 n_stages = 5  # number od stages in the scenario tree
 stages = range(1, n_stages + 1)
 scenarios = ['L', 'M', 'H']
@@ -43,9 +44,9 @@ t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
 
 # Define parameters of the decomposition
 max_iter = 100
-opt_tol = 1  # %
-ns = 7  # Number of scenarios solved per Forward/Backward Pass per process
-# NOTE: ns should be between 1 and len(n_stage[n_stages])
+opt_tol = 2  # %
+ns = 5  # Number of scenarios solved per Forward/Backward Pass per process
+# NOTE: ns should be between 1 and len(n_stage[n_stages])/NumProcesses
 z_alpha_2 = 1.96  # 95% confidence level
 
 # Parallel parameters
@@ -55,8 +56,16 @@ NumProcesses = 3
 
 # create scenarios and input data
 nodes, n_stage, parent_node, children_node, prob, sc_nodes = create_scenario_tree(stages, scenarios, single_prob)
-readData.read_data(filepath, stages, n_stage, t_per_stage)
+readData.read_data(filepath, curPath, stages, n_stage, t_per_stage)
 sc_headers = list(sc_nodes.keys())
+
+# operating scenarios
+operating_scenarios = list(range(0, len(readData.L_by_scenario)))
+prob_op = 1/len(readData.L_by_scenario)
+# print(operating_scenarios)
+
+# random sequence of op scenarios for node O to make sure all pids solve the same problem
+random_op_O = [random.randint(0, 1) for b in range(1, 100+1)]
 
 # separate nodes by processes
 scenarios_by_processid = {}
@@ -84,7 +93,7 @@ for pid in scenarios_by_processid.keys():
 
 pids_with_node_n = {n: [] for n in nodes}
 for pid in range(NumProcesses):
-    for stage in range(1, n_stages+1):
+    for stage in range(1, n_stages + 1):
         for n in n_stage_processid[pid][stage]:
             pids_with_node_n[n].append(pid)
 # print(pids_with_node_n)
@@ -113,6 +122,8 @@ if_converged = pymp.shared.dict()
 
 # Map stage by time_period
 stage_per_t = {t: k for k, v in t_per_stage.items() for t in v}
+
+
 # print(stage_per_t)
 
 
@@ -221,7 +232,21 @@ with pymp.Parallel(NumProcesses) as p:
         # Forward Pass
         for stage in m.stages:
             for n in sampled_nodes_stage[stage]:
-                # print("Forward Pass: ", "Stage", stage, "Current Node", n)
+                print("Forward Pass: ", "Stage", stage, "Current Node", n)
+                # randomly select which operating data profile to solve:
+                if n == 'O':
+                    op = random_op_O[iter_ - 1]
+                else:
+                    op = operating_scenarios[random.randrange(len(operating_scenarios))]
+                print("operating scenario", op)
+                for r in m.r:
+                    for t in m.t:
+                        for d in m.d:
+                            for s in m.hours:
+                                m.L[r, t, d, s] = readData.L_by_scenario[op][r, t, d, s]
+                                for rn in m.rn:
+                                    if (rn, r) in rn_r:
+                                        m.cf[rn, r, t, d, s] = readData.cf_by_scenario[op][rn, r, t, d, s]
 
                 ngo_rn, ngo_th, nso, cost = forward_pass(m.Bl[stage, n], rn_r, th_r, j_r, t_per_stage[stage])
 
@@ -236,7 +261,7 @@ with pymp.Parallel(NumProcesses) as p:
                         nso_par_k[j, r, t, n, iter_] = nso[j, r, t]
                         m.nso_par[j, r, t, n] = nso[j, r, t]
                 cost_forward[stage, n, iter_] = cost
-                # print('cost', cost_forward[stage, n, iter_])
+                print('cost', cost_forward[stage, n, iter_])
 
         # Compute cost per scenario solved inside of a process
         for s_sc in list(sampled_scenarios.keys()):
@@ -292,37 +317,61 @@ with pymp.Parallel(NumProcesses) as p:
                     # print("Backward Pass:", "Stage", stage, "Current Node", n)
                     if len(pids_with_node_n[n]) == 1:
                         for cn in children_node[n]:
-                            # print("Children Node", cn, "of stage", stage + 1)
+                            for op in operating_scenarios:
+                                print("Children Node", cn, "of stage", stage + 1, "op scenario", op)
 
-                            mltp_rn, mltp_th, mltp_s, cost = backward_pass(stage, m.Bl[stage + 1, cn], n_stages, rn_r,
-                                                                           th_r, j_r)
+                                # update operating data for current realization of op_scenario
+                                for r in m.r:
+                                    for t in m.t:
+                                        for d in m.d:
+                                            for s in m.hours:
+                                                m.L[r, t, d, s] = readData.L_by_scenario[op][r, t, d, s]
+                                                for rn in m.rn:
+                                                    if (rn, r) in rn_r:
+                                                        m.cf[rn, r, t, d, s] = readData.cf_by_scenario[op][
+                                                            rn, r, t, d, s]
 
-                            cost_backward[stage + 1, cn, iter_] = cost
-                            # print('cost', stage + 1, cn, cost_backward[stage + 1, cn, iter_])
+                                mltp_rn, mltp_th, mltp_s, cost = backward_pass(stage, m.Bl[stage + 1, cn], n_stages,
+                                                                               rn_r, th_r, j_r)
 
-                            for (rn, r) in rn_r:
-                                mltp_o_rn[rn, r, stage + 1, cn, iter_] = mltp_rn[rn, r]
-                            for (th, r) in th_r:
-                                mltp_o_th[th, r, stage + 1, cn, iter_] = mltp_th[th, r]
-                            for (j, r) in j_r:
-                                mltp_so[j, r, stage + 1, cn, iter_] = mltp_s[j, r]
+                                cost_backward[stage + 1, cn, op, iter_] = cost
+                                print('cost', stage + 1, cn, op, cost_backward[stage + 1, cn, op, iter_])
+
+                                for (rn, r) in rn_r:
+                                    mltp_o_rn[rn, r, stage + 1, cn, op, iter_] = mltp_rn[rn, r]
+                                for (th, r) in th_r:
+                                    mltp_o_th[th, r, stage + 1, cn, op, iter_] = mltp_th[th, r]
+                                for (j, r) in j_r:
+                                    mltp_so[j, r, stage + 1, cn, op, iter_] = mltp_s[j, r]
                     else:
                         for cn in children_node[n]:
                             if cn in nodes_by_processid[pid]:
-                                # print("Children Node", cn, "of stage", stage + 1)
+                                for op in operating_scenarios:
+                                    print("Children Node", cn, "of stage", stage + 1, "op scenario", op)
 
-                                mltp_rn, mltp_th, mltp_s, cost = backward_pass(stage + 1, m.Bl[stage + 1, cn], n_stages,
-                                                                               rn_r, th_r, j_r)
+                                    # update operating data for current realization of op_scenario
+                                    for r in m.r:
+                                        for t in m.t:
+                                            for d in m.d:
+                                                for s in m.hours:
+                                                    m.L[r, t, d, s] = readData.L_by_scenario[op][r, t, d, s]
+                                                    for rn in m.rn:
+                                                        if (rn, r) in rn_r:
+                                                            m.cf[rn, r, t, d, s] = readData.cf_by_scenario[op][
+                                                                rn, r, t, d, s]
 
-                                cost_backward[stage + 1, cn, iter_] = cost
-                                # print('cost', stage + 1, cn, cost_backward[stage + 1, cn, iter_])
+                                    mltp_rn, mltp_th, mltp_s, cost = backward_pass(stage + 1, m.Bl[stage + 1, cn], n_stages,
+                                                                                   rn_r, th_r, j_r)
 
-                                for (rn, r) in rn_r:
-                                    mltp_o_rn[rn, r, stage + 1, cn, iter_] = mltp_rn[rn, r]
-                                for (th, r) in th_r:
-                                    mltp_o_th[th, r, stage + 1, cn, iter_] = mltp_th[th, r]
-                                for (j, r) in j_r:
-                                    mltp_so[j, r, stage + 1, cn, iter_] = mltp_s[j, r]
+                                    cost_backward[stage + 1, cn, op, iter_] = cost
+                                    print('cost', stage + 1, cn, op, cost_backward[stage + 1, cn, op, iter_])
+
+                                    for (rn, r) in rn_r:
+                                        mltp_o_rn[rn, r, stage + 1, cn, op, iter_] = mltp_rn[rn, r]
+                                    for (th, r) in th_r:
+                                        mltp_o_th[th, r, stage + 1, cn, op, iter_] = mltp_th[th, r]
+                                    for (j, r) in j_r:
+                                        mltp_so[j, r, stage + 1, cn, op, iter_] = mltp_s[j, r]
                     calc_barrier.wait()
 
                 solve_barrier.wait()
@@ -332,21 +381,22 @@ with pymp.Parallel(NumProcesses) as p:
                         # add Benders cut for current iteration
                         t = t_per_stage[stage][-1]
                         m.Bl[stage, n].fut_cost.add(expr=(m.Bl[stage, n].alphafut >=
-                                                          sum((prob[cn] / prob[n_]) * (
-                                                                  cost_backward[stage + 1, cn, iter_]
-                                                                  + sum(mltp_o_rn[rn, r, stage + 1, cn, iter_] *
+                                                          sum((prob[cn] / prob[n_]) * prob_op * (
+                                                                  cost_backward[stage + 1, cn, op, iter_]
+                                                                  + sum(mltp_o_rn[rn, r, stage + 1, cn, op, iter_] *
                                                                         (ngo_rn_par_k[rn, r, t, n_, iter_] -
                                                                          m.Bl[stage, n].ngo_rn[rn, r, t])
                                                                         for rn, r in m.rn_r)
-                                                                  + sum(mltp_o_th[th, r, stage + 1, cn, iter_] *
+                                                                  + sum(mltp_o_th[th, r, stage + 1, cn, op, iter_] *
                                                                         (ngo_th_par_k[th, r, t, n_, iter_] -
                                                                          m.Bl[stage, n].ngo_th[th, r, t])
                                                                         for th, r in m.th_r)
-                                                                  + sum(mltp_so[j, r, stage + 1, cn, iter_] *
+                                                                  + sum(mltp_so[j, r, stage + 1, cn, op, iter_] *
                                                                         (nso_par_k[j, r, t, n_, iter_] -
                                                                          m.Bl[stage, n].nso[j, r, t])
                                                                         for j in m.j for r in m.r))
-                                                              for cn in children_node[n_])))
+                                                              for cn in children_node[n_]
+                                                              for op in operating_scenarios)))
 
             calc_barrier.wait()
             # print("thread %s completed calculation phase for stage" % p.thread_num, stage)
@@ -355,6 +405,18 @@ with pymp.Parallel(NumProcesses) as p:
         print("thread %s completed backward pass" % p.thread_num)
 
         if p.thread_num == 0:
+            op = operating_scenarios[random.randrange(len(operating_scenarios))]
+            # update operating data for current realization of op_scenario
+            for r in m.r:
+                for t in m.t:
+                    for d in m.d:
+                        for s in m.hours:
+                            m.L[r, t, d, s] = readData.L_by_scenario[op][r, t, d, s]
+                            for rn in m.rn:
+                                if (rn, r) in rn_r:
+                                    m.cf[rn, r, t, d, s] = readData.cf_by_scenario[op][
+                                        rn, r, t, d, s]
+
             # Solve last node:
             opt = SolverFactory('gurobi')
             opt.solve(m.Bl[1, 'O'])
@@ -407,6 +469,3 @@ with pymp.Parallel(NumProcesses) as p:
 
     print("thread %s completed calculation phase" % p.thread_num)
     calc_barrier.wait()
-
-
-

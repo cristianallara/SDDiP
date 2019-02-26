@@ -88,6 +88,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, L_
     m.j = Set(initialize=['Li_ion', 'Lead_acid', 'Flow'], ordered=True)
 
     m.d = Set(initialize=['spring', 'summer', 'fall', 'winter'], ordered=True)
+    #  Misleading (seasons not used) but used because of structure of old data
 
     m.hours = Set(initialize=['1:00', '2:00', '3:00', '4:00', '5:00', '6:00', '7:00', '8:00', '9:00', '10:00', '11:00',
                               '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00',
@@ -187,11 +188,11 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, L_
     m.storage_lifetime: storage lifetime (years)
     '''
 
-    m.L = Param(m.r, m.t, m.d, m.hours, default=0, initialize=readData.L)
+    m.L = Param(m.r, m.t, m.d, m.hours, default=0, mutable=True)  # initialize=readData.L)
     m.n_d = Param(m.d, default=0, initialize=readData.n_ss)
     m.L_max = Param(m.t_stage_node, default=0, initialize=L_max_scenario_pid)
     # m.L_max = Param(m.t, default=0, initialize=readData.L_max)
-    m.cf = Param(m.i, m.r, m.t, m.d, m.hours, default=0, initialize=readData.cf)
+    m.cf = Param(m.i, m.r, m.t, m.d, m.hours, default=0, mutable=True)  # initialize=readData.cf)
     m.Qg_np = Param(m.i_r, default=0, initialize=readData.Qg_np)
     m.Ng_max = Param(m.i_r, default=0, initialize=readData.Ng_max)
     m.Qinst_UB = Param(m.i, m.t, default=0, initialize=readData.Qinst_UB)
@@ -240,9 +241,6 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, L_
     m.eff_rate_charge = Param(m.j, default=0, initialize=readData.eff_rate_charge)
     m.eff_rate_discharge = Param(m.j, default=0, initialize=readData.eff_rate_discharge)
     m.storage_lifetime = Param(m.j, default=0, initialize=readData.storage_lifetime)
-
-    print("loaded the data")
-    print('Starting to build the blocks')
 
     # Block of Equations per time period
     def planning_block_rule(b, stage, n):
