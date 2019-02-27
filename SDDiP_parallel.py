@@ -19,9 +19,6 @@ import optBlocks as b
 from forward import forward_pass
 from backward_SDDiP import backward_pass
 
-# import pyomo.common.timing as timing
-# timing.report_timing()
-
 # ######################################################################################################################
 # USER-DEFINED PARAMS
 
@@ -63,9 +60,6 @@ sc_headers = list(sc_nodes.keys())
 operating_scenarios = list(range(0, len(readData.L_by_scenario)))
 prob_op = 1/len(readData.L_by_scenario)
 # print(operating_scenarios)
-
-# random sequence of op scenarios for node O to make sure all pids solve the same problem
-random_op_O = [random.randint(0, 1) for b in range(1, 100+1)]
 
 # separate nodes by processes
 scenarios_by_processid = {}
@@ -235,7 +229,7 @@ with pymp.Parallel(NumProcesses) as p:
                 print("Forward Pass: ", "Stage", stage, "Current Node", n)
                 # randomly select which operating data profile to solve:
                 if n == 'O':
-                    op = random_op_O[iter_ - 1]
+                    op = 0
                 else:
                     op = operating_scenarios[random.randrange(len(operating_scenarios))]
                 print("operating scenario", op)
@@ -405,7 +399,7 @@ with pymp.Parallel(NumProcesses) as p:
         print("thread %s completed backward pass" % p.thread_num)
 
         if p.thread_num == 0:
-            op = operating_scenarios[random.randrange(len(operating_scenarios))]
+            op = 0
             # update operating data for current realization of op_scenario
             for r in m.r:
                 for t in m.t:
