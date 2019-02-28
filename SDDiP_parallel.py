@@ -24,20 +24,20 @@ from backward_SDDiP import backward_pass
 
 # Define case-study
 curPath = os.path.abspath(os.path.curdir)
-# filepath = os.path.join(curPath, 'data/GTEP_data_10years.db')
+filepath = os.path.join(curPath, 'data/GTEP_data_10years.db')
 # filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
-filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
+# filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
 
 n_stages = 5  # number od stages in the scenario tree
 stages = range(1, n_stages + 1)
 scenarios = ['L', 'M', 'H']
 single_prob = {'L': 1 / 3, 'M': 1 / 3, 'H': 1 / 3}
 
-# time_periods = 10
-time_periods = 5
+time_periods = 10
+# time_periods = 5
 set_time_periods = range(1, time_periods + 1)
-# t_per_stage = {1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10]}
-t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
+t_per_stage = {1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10]}
+# t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
 
 # Define parameters of the decomposition
 max_iter = 100
@@ -94,12 +94,12 @@ for pid in range(NumProcesses):
 
 
 # Split uncertain parameter by processes
-L_max_scenario_pid = {}
+uncertainty_param_pid = {}
 for pid in scenarios_by_processid.keys():
-    L_max_scenario_pid[pid] = {(t, stage, node): readData.L_max_s[t, stage, node] for stage in stages
+    uncertainty_param_pid[pid] = {(t, stage, node): readData.tx_CO2[t, stage, node] for stage in stages
                                for node in n_stage[stage] if node in nodes_by_processid[pid]
                                for t in t_per_stage[stage]}
-# print(L_max_scenario_pid)
+# print(uncertainty_param_pid)
 
 # Shared data among processes
 ngo_rn_par_k = pymp.shared.dict()
@@ -152,7 +152,7 @@ with pymp.Parallel(NumProcesses) as p:
 
     # create blocks
     m = b.create_model(n_stages, time_periods, t_per_stage, max_iter, n_stage_processid[pid], nodes_by_processid[pid],
-                       L_max_scenario_pid[pid], pid)
+                       uncertainty_param_pid[pid], pid)
     start_time = time.time()
 
     # Decomposition Parameters

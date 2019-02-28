@@ -42,7 +42,7 @@ def read_data(database_file, curPath, stages, n_stage, t_per_stage):
 
     params = ['n_ss', 'L_max', 'Qg_np', 'Ng_old', 'Ng_max', 'Qinst_UB', 'LT', 'Tremain', 'Ng_r', 'q_v',
               'Pg_min', 'Ru_max', 'Rd_max', 'f_start', 'C_start', 'frac_spin', 'frac_Qstart', 't_loss', 't_up', 'dist',
-              'if_', 'ED', 'Rmin', 'hr', 'P_fuel', 'EF_CO2', 'FOC', 'VOC', 'CCm', 'DIC', 'LEC', 'PEN', 'tx_CO2',
+              'if_', 'ED', 'Rmin', 'hr', 'P_fuel', 'EF_CO2', 'FOC', 'VOC', 'CCm', 'DIC', 'LEC', 'PEN', #'tx_CO2',
               'RES_min']  # , 'L', 'cf']
 
     for p in params:
@@ -341,44 +341,45 @@ def read_data(database_file, curPath, stages, n_stage, t_per_stage):
     # Strategic uncertainty data
 
     # Different scenarios for PEAK LOAD:
-    L_max_scenario = {'L': L_max, 'M': {t: 1.05 * L_max[t] for t in L_max}, 'H': {t: 1.2 * L_max[t] for t in L_max}}
-    # print(L_max_scenario)
+    # L_max_scenario = {'L': L_max, 'M': {t: 1.05 * L_max[t] for t in L_max}, 'H': {t: 1.2 * L_max[t] for t in L_max}}
+    # # print(L_max_scenario)
+    #
+    # L_max_s = {}
+    # for stage in stages:
+    #     for n in n_stage[stage]:
+    #         for t in t_per_stage[stage]:
+    #             if stage == 1:
+    #                 L_max_s[t, stage, n] = L_max_scenario['M'][t]
+    #             else:
+    #                 m = n[-1]
+    #                 if m == 'L':
+    #                     L_max_s[t, stage, n] = L_max_scenario['L'][t]
+    #                 elif m == 'M':
+    #                     L_max_s[t, stage, n] = L_max_scenario['M'][t]
+    #                 elif m == 'H':
+    #                     L_max_s[t, stage, n] = L_max_scenario['H'][t]
+    # globals()["L_max_s"] = L_max_s
+    # print(L_max_s)
 
-    L_max_s = {}
+    # Different scenarios for CARBON TAX:
+    tx_CO2_scenario = {'L': 0, 'M': 0.025, 'H': 0.050}
+
+    tx_CO2 = {}
     for stage in stages:
         for n in n_stage[stage]:
             for t in t_per_stage[stage]:
                 if stage == 1:
-                    L_max_s[t, stage, n] = L_max_scenario['M'][t]
+                    tx_CO2[t, stage, n] = 0
                 else:
                     m = n[-1]
                     if m == 'L':
-                        L_max_s[t, stage, n] = L_max_scenario['L'][t]
+                        tx_CO2[t, stage, n] = tx_CO2_scenario['L']
                     elif m == 'M':
-                        L_max_s[t, stage, n] = L_max_scenario['M'][t]
+                        tx_CO2[t, stage, n] = tx_CO2_scenario['M']
                     elif m == 'H':
-                        L_max_s[t, stage, n] = L_max_scenario['H'][t]
-    globals()["L_max_s"] = L_max_s
-    # print(L_max_s)
+                        tx_CO2[t, stage, n] = tx_CO2_scenario['H']
+    globals()["tx_CO2"] = tx_CO2
 
-    # Different scenarios for CARBON TAX:
-    # tx_CO2_scenario = {'L': 0, 'M': 0.025, 'H': 0.050}
-    #
-    # tx_CO2 = {}
-    # for t in stages:
-    #     for n in n_stage[t]:
-    #         if t == 1:
-    #             tx_CO2[t, n] = 0
-    #         else:
-    #             m = n[-1]
-    #             if m == 'L':
-    #                 tx_CO2[t, n] = tx_CO2_scenario['L']
-    #             elif m == 'M':
-    #                 tx_CO2[t, n] = tx_CO2_scenario['M']
-    #             elif m == 'H':
-    #                 tx_CO2[t, n] = tx_CO2_scenario['H']
-    # globals()["tx_CO2"] = tx_CO2
-
-    print('finished loading data')
+    # print('finished loading data')
 
 

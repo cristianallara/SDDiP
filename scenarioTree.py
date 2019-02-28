@@ -49,8 +49,8 @@ def create_scenario_tree(stages, scenarios, single_prob):
             pn = parent_node[sc_nodes[n][-1]]
             sc_nodes[n].append(pn)
     # print(sc_nodes)
-    print('finished creating scenario tree')
-    print('number of scenarios:', len(n_stage[stages[-1]]))
+    # print('finished creating scenario tree')
+    # print('number of scenarios:', len(n_stage[stages[-1]]))
 
     return nodes, n_stage, parent_node, children_node, prob, sc_nodes
 
