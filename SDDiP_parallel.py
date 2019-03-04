@@ -24,20 +24,20 @@ from backward_SDDiP import backward_pass
 
 # Define case-study
 curPath = os.path.abspath(os.path.curdir)
-filepath = os.path.join(curPath, 'data/GTEP_data_10years.db')
+# filepath = os.path.join(curPath, 'data/GTEP_data_10years.db')
 # filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
-# filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
+filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
 
 n_stages = 5  # number od stages in the scenario tree
 stages = range(1, n_stages + 1)
 scenarios = ['L', 'M', 'H']
 single_prob = {'L': 1 / 3, 'M': 1 / 3, 'H': 1 / 3}
 
-time_periods = 10
-# time_periods = 5
+# time_periods = 10
+time_periods = 5
 set_time_periods = range(1, time_periods + 1)
-t_per_stage = {1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10]}
-# t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
+# t_per_stage = {1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10]}
+t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
 
 # Define parameters of the decomposition
 max_iter = 100

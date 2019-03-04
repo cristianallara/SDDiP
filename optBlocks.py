@@ -95,8 +95,6 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
                               '22:00', '23:00', '24:00'], ordered=True)
 
     m.t = RangeSet(time_periods)
-    print(list(m.t))
-    print(t_per_stage)
 
     m.stages = RangeSet(stages)
 
