@@ -9,7 +9,7 @@ import math
 import readData
 
 
-def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, uncertainty_pid, pid):
+def create_model(stages, time_periods, t_per_stage, max_iter):
     m = ConcreteModel()
 
     # ################################## Declare of sets ##################################
@@ -98,15 +98,8 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
 
     m.stages = RangeSet(stages)
 
-    nodes_set = set(nodes)
-    node_stage = [(stage, n) for stage in m.stages for n in n_stage[stage] if n in nodes_set]
-    m.n_stage = Set(initialize=node_stage)
-
-    t_stage_node = [(t, stage, n) for (stage, n) in m.n_stage for t in t_per_stage[stage]]
-    m.t_stage_node = Set(initialize=t_stage_node)
-
-    t_node = [(t, n) for (stage, n) in m.n_stage for t in t_per_stage[stage]]
-    m.t_node = Set(initialize=t_node)
+    t_stage = [(t, stage) for stage in m.stages for t in t_per_stage[stage]]
+    m.t_stage = Set(initialize=t_stage)
 
     # Superset of iterations
     m.iter = RangeSet(max_iter)
@@ -190,7 +183,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
 
     m.L = Param(m.r, m.t, m.d, m.hours, default=0, mutable=True)  # initialize=readData.L)
     m.n_d = Param(m.d, default=0, initialize=readData.n_ss)
-    # m.L_max = Param(m.t_stage_node, default=0, initialize=uncertainty_pid)
+    # m.L_max = Param(m.t_stage, default=0, initialize=uncertainty_pid)
     m.L_max = Param(m.t, default=0, initialize=readData.L_max)
     m.cf = Param(m.i, m.r, m.t, m.d, m.hours, default=0, mutable=True)  # initialize=readData.cf)
     m.Qg_np = Param(m.i_r, default=0, initialize=readData.Qg_np)
@@ -215,7 +208,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
     m.Rmin = Param(m.t, default=0, initialize=readData.Rmin)
     m.hr = Param(m.i_r, default=0, initialize=readData.hr)
     m.P_fuel = Param(m.i, m.t, default=0, initialize=readData.P_fuel)
-    # m.P_fuel = Param(m.i, m.n_stage, default=0, initialize=P_fuel)
+    # m.P_fuel = Param(m.i, m.t_stage, default=0, initialize=P_fuel)
     m.EF_CO2 = Param(m.i, default=0, initialize=readData.EF_CO2)
     m.FOC = Param(m.i, m.t, default=0, initialize=readData.FOC)
     m.VOC = Param(m.i, m.t, default=0, initialize=readData.VOC)
@@ -225,7 +218,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
     m.PEN = Param(m.t, default=0, initialize=readData.PEN)
     m.PENc = Param(default=0, initialize=readData.PENc)
     # m.tx_CO2 = Param(m.t, default=0, initialize=readData.tx_CO2)
-    m.tx_CO2 = Param(m.t_stage_node, default=0, initialize=uncertainty_pid)
+    m.tx_CO2 = Param(m.t_stage, default=0, mutable=True)
     m.RES_min = Param(m.t, default=0, initialize=readData.RES_min)
     m.hs = Param(initialize=readData.hs, default=0)
     m.ir = Param(initialize=readData.ir, default=0)
@@ -243,8 +236,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
     m.storage_lifetime = Param(m.j, default=0, initialize=readData.storage_lifetime)
 
     # Block of Equations per time period
-    def planning_block_rule(b, stage, n):
-        print("stage: ", stage, "node: ", n, "process", pid)
+    def planning_block_rule(b, stage):
 
         def bound_P(_b, i, r, t, d, s):
             if i in m.old:
@@ -448,8 +440,8 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
         b.nso_prev = Var(m.j, m.r, within=NonNegativeReals)
 
         def obj_rule(_b):
-            return sum(m.if_[t] * (sum(m.n_d[d] * m.hs * sum((m.VOC[i, t] + m.hr[i, r] * m.P_fuel[i, t]  # ,n]
-                                                              + m.EF_CO2[i] * m.tx_CO2[t, stage, n] * m.hr[i, r]) * _b.P[
+            return sum(m.if_[t] * (sum(m.n_d[d] * m.hs * sum((m.VOC[i, t] + m.hr[i, r] * m.P_fuel[i, t]
+                                                              + m.EF_CO2[i] * m.tx_CO2[t, stage] * m.hr[i, r]) * _b.P[
                                                                  i, r, t, d, s]
                                                              for i, r in m.i_r)
                                        for d in m.d for s in m.hours) + sum(m.FOC[rn, t] * m.Qg_np[rn, r] *
@@ -457,8 +449,8 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
                                    + sum(m.FOC[th, t] * m.Qg_np[th, r] * _b.ngo_th[th, r, t]
                                          for th, r in m.th_r)
                                    + sum(m.n_d[d] * m.hs * _b.su[th, r, t, d, s] * m.Qg_np[th, r]
-                                         * (m.f_start[th] * m.P_fuel[th, t]  # ,n]
-                                            + m.f_start[th] * m.EF_CO2[th] * m.tx_CO2[t, stage, n] + m.C_start[th])
+                                         * (m.f_start[th] * m.P_fuel[th, t]
+                                            + m.f_start[th] * m.EF_CO2[th] * m.tx_CO2[t, stage] + m.C_start[th])
                                          for th, r in m.th_r for d in m.d for s in m.hours)
                                    + sum(m.DIC[rnew, t] * m.CCm[rnew] * m.Qg_np[rnew, r] * _b.ngb_rn[rnew, r, t]
                                          for rnew, r in m.rn_r if rnew in m.rnew)
@@ -489,7 +481,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
         def min_reserve(_b, t):
             return sum(m.Qg_np[rn, r] * _b.ngo_rn[rn, r, t] * m.q_v[rn] for rn, r in m.i_r if rn in m.rn) \
                    + sum(m.Qg_np[th, r] * _b.ngo_th[th, r, t] for th, r in m.i_r if th in m.th) \
-                   >= (1 + m.Rmin[t]) * m.L_max[t]  # , stage, n]
+                   >= (1 + m.Rmin[t]) * m.L_max[t]
 
         b.min_reserve = Constraint(t_per_stage[stage], rule=min_reserve)
 
@@ -698,6 +690,6 @@ def create_model(stages, time_periods, t_per_stage, max_iter, n_stage, nodes, un
 
         b.fut_cost = ConstraintList()
 
-    m.Bl = Block(m.n_stage, rule=planning_block_rule)
+    m.Bl = Block(m.stages, rule=planning_block_rule)
 
     return m
