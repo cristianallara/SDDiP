@@ -183,7 +183,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
 
     m.L = Param(m.r, m.t, m.d, m.hours, default=0, mutable=True)  # initialize=readData.L)
     m.n_d = Param(m.d, default=0, initialize=readData.n_ss)
-    # m.L_max = Param(m.t_stage, default=0, initialize=uncertainty_pid)
+    # m.L_max = Param(m.t_stage, default=0, mutable=True)
     m.L_max = Param(m.t, default=0, initialize=readData.L_max)
     m.cf = Param(m.i, m.r, m.t, m.d, m.hours, default=0, mutable=True)  # initialize=readData.cf)
     m.Qg_np = Param(m.i_r, default=0, initialize=readData.Qg_np)
@@ -207,8 +207,8 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
     m.ED = Param(m.t, default=0, initialize=readData.ED)
     m.Rmin = Param(m.t, default=0, initialize=readData.Rmin)
     m.hr = Param(m.i_r, default=0, initialize=readData.hr)
-    m.P_fuel = Param(m.i, m.t, default=0, initialize=readData.P_fuel)
-    # m.P_fuel = Param(m.i, m.t_stage, default=0, initialize=P_fuel)
+    #m.P_fuel = Param(m.i, m.t, default=0, initialize=readData.P_fuel)
+    m.P_fuel = Param(m.i, m.t_stage, default=0, mutable=True)
     m.EF_CO2 = Param(m.i, default=0, initialize=readData.EF_CO2)
     m.FOC = Param(m.i, m.t, default=0, initialize=readData.FOC)
     m.VOC = Param(m.i, m.t, default=0, initialize=readData.VOC)
@@ -217,8 +217,8 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
     m.LEC = Param(m.i, default=0, initialize=readData.LEC)
     m.PEN = Param(m.t, default=0, initialize=readData.PEN)
     m.PENc = Param(default=0, initialize=readData.PENc)
-    # m.tx_CO2 = Param(m.t, default=0, initialize=readData.tx_CO2)
-    m.tx_CO2 = Param(m.t_stage, default=0, mutable=True)
+    m.tx_CO2 = Param(m.t, default=0, initialize=readData.tx_CO2)
+    # m.tx_CO2 = Param(m.t_stage, default=0, mutable=True)
     m.RES_min = Param(m.t, default=0, initialize=readData.RES_min)
     m.hs = Param(initialize=readData.hs, default=0)
     m.ir = Param(initialize=readData.ir, default=0)
@@ -440,8 +440,8 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
         b.nso_prev = Var(m.j, m.r, within=NonNegativeReals)
 
         def obj_rule(_b):
-            return sum(m.if_[t] * (sum(m.n_d[d] * m.hs * sum((m.VOC[i, t] + m.hr[i, r] * m.P_fuel[i, t]
-                                                              + m.EF_CO2[i] * m.tx_CO2[t, stage] * m.hr[i, r]) * _b.P[
+            return sum(m.if_[t] * (sum(m.n_d[d] * m.hs * sum((m.VOC[i, t] + m.hr[i, r] * m.P_fuel[i, t, stage]
+                                                              + m.EF_CO2[i] * m.tx_CO2[t] * m.hr[i, r]) * _b.P[
                                                                  i, r, t, d, s]
                                                              for i, r in m.i_r)
                                        for d in m.d for s in m.hours) + sum(m.FOC[rn, t] * m.Qg_np[rn, r] *
@@ -449,8 +449,8 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
                                    + sum(m.FOC[th, t] * m.Qg_np[th, r] * _b.ngo_th[th, r, t]
                                          for th, r in m.th_r)
                                    + sum(m.n_d[d] * m.hs * _b.su[th, r, t, d, s] * m.Qg_np[th, r]
-                                         * (m.f_start[th] * m.P_fuel[th, t]
-                                            + m.f_start[th] * m.EF_CO2[th] * m.tx_CO2[t, stage] + m.C_start[th])
+                                         * (m.f_start[th] * m.P_fuel[th, t, stage]
+                                            + m.f_start[th] * m.EF_CO2[th] * m.tx_CO2[t] + m.C_start[th])
                                          for th, r in m.th_r for d in m.d for s in m.hours)
                                    + sum(m.DIC[rnew, t] * m.CCm[rnew] * m.Qg_np[rnew, r] * _b.ngb_rn[rnew, r, t]
                                          for rnew, r in m.rn_r if rnew in m.rnew)

@@ -26,7 +26,6 @@ def create_scenario_tree(stages, scenarios, single_prob):
     # initialize transition probability
     prob = collections.OrderedDict()
     prob['O'] = 1
-
     for i in stages[1:]:
         for j in n_stage[i-1]:
             children_node[j] = []
@@ -36,8 +35,7 @@ def create_scenario_tree(stages, scenarios, single_prob):
                 parent_node[node] = j
                 children_node[j].append(node)
                 prob[node] = prob[j] * single_prob[s]
-                g.add_edge(j, node, weight=prob[node])
-
+                g.add_edge(j, node)
     for i in stages:
         nodes.extend(n_stage[i])
     g.add_nodes_from(nodes)
@@ -48,9 +46,10 @@ def create_scenario_tree(stages, scenarios, single_prob):
         for s in reversed(stages):
             pn = parent_node[sc_nodes[n][-1]]
             sc_nodes[n].append(pn)
+
     # print(sc_nodes)
-    # print('finished creating scenario tree')
-    # print('number of scenarios:', len(n_stage[stages[-1]]))
+    print('finished creating scenario tree')
+    print('number of scenarios:', len(n_stage[stages[-1]]))
 
     return nodes, n_stage, parent_node, children_node, prob, sc_nodes
 
