@@ -60,12 +60,12 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
         m.stage: set of stages in the scenario tree
     '''
     m.r = Set(initialize=['Northeast', 'West', 'Coastal', 'South', 'Panhandle'], ordered=True)
-    m.i = Set(initialize=['coal-st-old1', 'ng-ct-old', 'ng-cc-old', 'ng-st-old', 'nuc-st-old', 'pv-old', 'wind-old',
-                          'nuc-st-new', 'wind-new', 'pv-new', 'csp-new', 'coal-igcc-new', 'coal-igcc-ccs-new',
-                          'ng-cc-new', 'ng-cc-ccs-new', 'ng-ct-new'], ordered=True)
-    m.th = Set(within=m.i, initialize=['nuc-st-old', 'nuc-st-new', 'coal-st-old1', 'coal-igcc-new', 'coal-igcc-ccs-new',
+    m.i = Set(initialize=['coal-st-old1', 'ng-ct-old', 'ng-cc-old', 'ng-st-old', 'pv-old', 'wind-old',
+                          'wind-new', 'pv-new', 'csp-new', 'coal-igcc-new', 'coal-igcc-ccs-new',
+                          'ng-cc-new', 'ng-cc-ccs-new', 'ng-ct-new', 'nuc-st-old', 'nuc-st-new'], ordered=True)
+    m.th = Set(within=m.i, initialize=['coal-st-old1', 'coal-igcc-new', 'coal-igcc-ccs-new',
                                        'ng-ct-old', 'ng-cc-old', 'ng-st-old', 'ng-cc-new', 'ng-cc-ccs-new',
-                                       'ng-ct-new'], ordered=True)
+                                       'ng-ct-new', 'nuc-st-old', 'nuc-st-new'], ordered=True)
     m.rn = Set(within=m.i, initialize=['pv-old', 'pv-new', 'csp-new', 'wind-old', 'wind-new'], ordered=True)
     m.co = Set(within=m.th, initialize=['coal-st-old1', 'coal-igcc-new', 'coal-igcc-ccs-new'], ordered=True)
     m.ng = Set(within=m.th, initialize=['ng-ct-old', 'ng-cc-old', 'ng-st-old', 'ng-cc-new', 'ng-cc-ccs-new',
@@ -74,17 +74,16 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
     m.pv = Set(within=m.rn, initialize=['pv-old', 'pv-new'], ordered=True)
     m.csp = Set(within=m.rn, initialize=['csp-new'], ordered=True)
     m.wi = Set(within=m.rn, initialize=['wind-old', 'wind-new'], ordered=True)
-    m.old = Set(within=m.i, initialize=['coal-st-old1', 'ng-ct-old', 'ng-cc-old', 'ng-st-old', 'nuc-st-old', 'pv-old',
-                                        'wind-old'], ordered=True)
-    m.new = Set(within=m.i, initialize=['nuc-st-new', 'wind-new', 'pv-new', 'csp-new', 'coal-igcc-new',
+    m.old = Set(within=m.i, initialize=['coal-st-old1', 'ng-ct-old', 'ng-cc-old', 'ng-st-old', 'pv-old',
+                                        'wind-old', 'nuc-st-old'], ordered=True)
+    m.new = Set(within=m.i, initialize=['wind-new', 'pv-new', 'csp-new', 'coal-igcc-new', 'nuc-st-new',
                                         'coal-igcc-ccs-new', 'ng-cc-new', 'ng-cc-ccs-new', 'ng-ct-new'], ordered=True)
     m.rold = Set(within=m.old, initialize=['pv-old', 'wind-old'], ordered=True)
     m.rnew = Set(within=m.new, initialize=['wind-new', 'pv-new', 'csp-new'], ordered=True)
-    m.told = Set(within=m.old, initialize=['nuc-st-old', 'coal-st-old1', 'ng-ct-old', 'ng-cc-old', 'ng-st-old'],
+    m.told = Set(within=m.old, initialize=['coal-st-old1', 'ng-ct-old', 'ng-cc-old', 'ng-st-old', 'nuc-st-old'],
                  ordered=True)
-    m.tnew = Set(within=m.new, initialize=['nuc-st-new', 'coal-igcc-new', 'coal-igcc-ccs-new', 'ng-cc-new',
+    m.tnew = Set(within=m.new, initialize=['coal-igcc-new', 'coal-igcc-ccs-new', 'ng-cc-new', 'nuc-st-new',
                                            'ng-cc-ccs-new', 'ng-ct-new'], ordered=True)
-
     m.j = Set(initialize=['Li_ion', 'Lead_acid', 'Flow'], ordered=True)
 
     m.d = Set(initialize=['spring', 'summer', 'fall', 'winter'], ordered=True)
@@ -133,7 +132,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
     m.L_max: peak load in year t (MW)
     m.cf: capacity factor of renewable generation cluster i in region r at sub-period s, of representative day d of r
         year t (fraction of the nameplate capacity)
-    m.Qg_np: generator nameplate capacity
+    m.Qg_np: generator nameplate capacity (MW)
     m.Ng_max: max number of generators in cluster i of region r
     m.Qinst_UB: Yearly upper bound on installation capacity by generator type
     m.LT: expected lifetime of generation cluster i (years)
@@ -207,7 +206,7 @@ def create_model(stages, time_periods, t_per_stage, max_iter):
     m.ED = Param(m.t, default=0, initialize=readData.ED)
     m.Rmin = Param(m.t, default=0, initialize=readData.Rmin)
     m.hr = Param(m.i_r, default=0, initialize=readData.hr)
-    #m.P_fuel = Param(m.i, m.t, default=0, initialize=readData.P_fuel)
+    # m.P_fuel = Param(m.i, m.t, default=0, initialize=readData.P_fuel)
     m.P_fuel = Param(m.i, m.t_stage, default=0, mutable=True)
     m.EF_CO2 = Param(m.i, default=0, initialize=readData.EF_CO2)
     m.FOC = Param(m.i, m.t, default=0, initialize=readData.FOC)

@@ -24,31 +24,28 @@ from backward_SDDiP import backward_pass
 
 # Define case-study
 curPath = os.path.abspath(os.path.curdir)
-filepath = os.path.join(curPath, 'data/GTEP_data_10years.db')
-# filepath = os.path.join(curPath, 'data/GTEPdata_5years.db')
-# filepath = os.path.join(curPath, 'data/GTEPdata_2019_2023.db')
+filepath = os.path.join(curPath, 'data/GTEPdata_2020_2034.db')
 
-n_stages = 10  # number od stages in the scenario tree
+n_stages = 15  # number od stages in the scenario tree
 stages = range(1, n_stages + 1)
 scenarios = ['L', 'M', 'H']
-single_prob = {'L': 1 / 3, 'M': 1 / 3, 'H': 1 / 3}
+single_prob = {'L': 1/3, 'M': 1/3, 'H': 1/3}
 
 # time_periods = 10
-time_periods = 10
+time_periods = 15
 set_time_periods = range(1, time_periods + 1)
-# t_per_stage = {1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10]}
-# t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5]}
-t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5], 6: [6], 7: [7], 8: [8], 9: [9], 10: [10]}
+t_per_stage = {1: [1], 2: [2], 3: [3], 4: [4], 5: [5], 6: [6], 7: [7], 8: [8], 9: [9], 10: [10],
+               11: [11], 12: [12], 13: [13], 14: [14], 15: [15]}
 
 # Define parameters of the decomposition
-max_iter = 100
-opt_tol = 2  # %
+max_iter = 4
+opt_tol = 1  # %
 ns = 5  # Number of scenarios solved per Forward/Backward Pass per process
 # NOTE: ns should be between 1 and len(n_stage[n_stages])/NumProcesses
 z_alpha_2 = 1.96  # 95% confidence level
 
 # Parallel parameters
-NumProcesses = 3
+NumProcesses = 1
 
 # ######################################################################################################################
 
@@ -93,14 +90,9 @@ for pid in range(NumProcesses):
             pids_with_node_n[n].append(pid)
 # print(pids_with_node_n)
 
-
-# Split uncertain parameter by processes
-uncertainty_param_pid = {}
-for pid in scenarios_by_processid.keys():
-    uncertainty_param_pid[pid] = {(t, stage, node): readData.tx_CO2[t, stage, node] for stage in stages
-                                  for node in n_stage[stage] if node in nodes_by_processid[pid]
-                                  for t in t_per_stage[stage]}
-# print(uncertainty_param_pid)
+# list of thermal generators:
+th_generators = ['coal-st-old1', 'coal-igcc-new', 'coal-igcc-ccs-new', 'ng-ct-old', 'ng-cc-old', 'ng-st-old',
+                 'ng-cc-new', 'ng-cc-ccs-new', 'ng-ct-new', 'nuc-st-old', 'nuc-st-new']
 
 # Shared data among processes
 ngo_rn_par_k = pymp.shared.dict()
@@ -118,8 +110,6 @@ if_converged = pymp.shared.dict()
 
 # Map stage by time_period
 stage_per_t = {t: k for k, v in t_per_stage.items() for t in v}
-
-
 # print(stage_per_t)
 
 
@@ -160,7 +150,6 @@ with pymp.Parallel(NumProcesses) as p:
     m.ngo_rn_par = Param(m.rn_r, m.stages, default=0, initialize=0, mutable=True)
     m.ngo_th_par = Param(m.th_r, m.stages, default=0, initialize=0, mutable=True)
     m.nso_par = Param(m.j, m.r, m.stages, default=0, initialize=0, mutable=True)
-    m.nsb_par = Param(m.j, m.r, m.stages, default=0, initialize=0, mutable=True)
 
     # Parameters to compute upper and lower bounds
     mean = {}
@@ -232,7 +221,12 @@ with pymp.Parallel(NumProcesses) as p:
 
             # populate strategic uncertainty parameter
             for t in t_per_stage[stage]:
-                m.tx_CO2[t, stage] = readData.tx_CO2[t, stage, n]
+                for th in th_generators:
+                    node = n[-1]
+                    m.P_fuel[th, t, stage] = readData.P_fuel_scenarios[th, t, stage, node]
+            # for t in t_per_stage[stage]:
+            #         node = n[-1]
+            #         m.tx_CO2[t, stage] = readData.tx_CO2[t, stage, node]
 
             ngo_rn, ngo_th, nso, cost = forward_pass(m.Bl[stage], rn_r, th_r, j_r, t_per_stage[stage])
 
@@ -267,7 +261,12 @@ with pymp.Parallel(NumProcesses) as p:
 
                     # populate strategic uncertainty parameter
                     for t in t_per_stage[stage]:
-                        m.tx_CO2[t, stage] = readData.tx_CO2[t, stage, n]
+                        for th in th_generators:
+                            node = n[-1]
+                            m.P_fuel[th, t, stage] = readData.P_fuel_scenarios[th, t, stage, node]
+                    # for t in t_per_stage[stage]:
+                    #     node = n[-1]
+                    #     m.tx_CO2[t, stage] = readData.tx_CO2[t, stage, node]
 
                     # populate current state from parent node
                     for (rn, r) in rn_r:
@@ -293,7 +292,7 @@ with pymp.Parallel(NumProcesses) as p:
                     print('cost', cost_forward[stage, n, iter_], 'pid', pid)
 
         # Compute cost per scenario solved inside of a process
-        for s_sc in list(sampled_scenarios.keys()): # TODO:potentially solve this just by pid=0
+        for s_sc in list(sampled_scenarios.keys()):
             cost_scenario_forward[s_sc, iter_] = 0
             for stage in m.stages:
                 cost_scenario_forward[s_sc, iter_] += \
@@ -363,7 +362,12 @@ with pymp.Parallel(NumProcesses) as p:
 
                                 # populate strategic uncertainty parameter
                                 for t in t_per_stage[stage + 1]:
-                                    m.tx_CO2[t, stage+1] = readData.tx_CO2[t, stage+1, cn]
+                                    for th in th_generators:
+                                        node = cn[-1]
+                                        m.P_fuel[th, t, stage+1] = readData.P_fuel_scenarios[th, t, stage+1, node]
+                                # for t in t_per_stage[stage + 1]:
+                                #     node = cn[-1]
+                                #     m.tx_CO2[t, stage + 1] = readData.tx_CO2[t, stage + 1, node]
 
                                 # populate current state from parent node
                                 for (rn, r) in rn_r:
@@ -405,7 +409,12 @@ with pymp.Parallel(NumProcesses) as p:
 
                                     # populate strategic uncertainty parameter
                                     for t in t_per_stage[stage + 1]:
-                                        m.tx_CO2[t, stage+1] = readData.tx_CO2[t, stage + 1, cn]
+                                        for th in th_generators:
+                                            node = cn[-1]
+                                            m.P_fuel[th, t, stage+1] =readData.P_fuel_scenarios[th, t, stage + 1,node]
+                                    # for t in t_per_stage[stage + 1]:
+                                    #     node = cn[-1]
+                                    #     m.tx_CO2[t, stage + 1] = readData.tx_CO2[t, stage + 1, node]
 
                                     # populate current state from parent node
                                     for (rn, r) in rn_r:
@@ -475,9 +484,12 @@ with pymp.Parallel(NumProcesses) as p:
                                 if (rn, r) in rn_r:
                                     m.cf[rn, r, t, d, s] = readData.cf_by_scenario[op][
                                         rn, r, t, d, s]
+
             # populate strategic uncertainty parameter
             for t in t_per_stage[stage]:
-                m.tx_CO2[t, stage] = readData.tx_CO2[t, stage, n]
+                for th in th_generators:
+                    node = n[-1]
+                    m.P_fuel[th, t, stage] = readData.P_fuel_scenarios[th, t, stage, node]
 
             opt = SolverFactory('gurobi')
             opt.options['timelimit'] = 100

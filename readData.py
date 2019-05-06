@@ -4,8 +4,8 @@ import pandas as pd
 
 
 def read_data(database_file, curPath, stages, n_stage, t_per_stage):
-    # print(os.path.exists(database_file))
-    # print(database_file)
+    print(os.path.exists(database_file))
+    print(database_file)
     conn = sql.connect(database_file)
     c = conn.cursor()
 
@@ -42,7 +42,7 @@ def read_data(database_file, curPath, stages, n_stage, t_per_stage):
 
     params = ['n_ss', 'L_max', 'Qg_np', 'Ng_old', 'Ng_max', 'Qinst_UB', 'LT', 'Tremain', 'Ng_r', 'q_v',
               'Pg_min', 'Ru_max', 'Rd_max', 'f_start', 'C_start', 'frac_spin', 'frac_Qstart', 't_loss', 't_up', 'dist',
-              'if_', 'ED', 'Rmin', 'hr', 'EF_CO2', 'FOC', 'VOC', 'CCm', 'DIC', 'LEC', 'PEN',  'tx_CO2',
+              'if_', 'ED', 'Rmin', 'hr', 'EF_CO2', 'FOC', 'VOC', 'CCm', 'DIC', 'LEC', 'PEN', 'tx_CO2',
               'RES_min', 'P_fuel']  # , 'L', 'cf',
 
     for p in params:
@@ -74,8 +74,6 @@ def read_data(database_file, curPath, stages, n_stage, t_per_stage):
                         ('Li_ion', 10): 741754.6519,
                         ('Li_ion', 11): 701857.294, ('Li_ion', 12): 665604.5808,
                         ('Li_ion', 13): 632766.397, ('Li_ion', 14): 603165.7101, ('Li_ion', 15): 576639.6204,
-                        # ('Li_ion', 16): 553012.1704, ('Li_ion', 17): 532079.791, ('Li_ion', 18): 513609.5149,
-                        # ('Li_ion', 19): 497347.4123, ('Li_ion', 20): 483032.4302,
                         ('Lead_acid', 1): 4346125.294, ('Lead_acid', 2): 3857990.578, ('Lead_acid', 3): 3458901.946,
                         ('Lead_acid', 4): 3117666.824, ('Lead_acid', 5): 2818863.27,
                         ('Lead_acid', 6): 2553828.021,
@@ -83,17 +81,13 @@ def read_data(database_file, curPath, stages, n_stage, t_per_stage):
                         ('Lead_acid', 10): 1748369.467,
                         ('Lead_acid', 11): 1600168.567, ('Lead_acid', 12): 1471137.002,
                         ('Lead_acid', 13): 1360557.098,('Lead_acid', 14): 1267402.114, ('Lead_acid', 15): 1190102.412,
-                        # ('Lead_acid', 16): 1126569.481, ('Lead_acid', 17): 1074464.42, ('Lead_acid', 18): 1031526.418,
-                        # ('Lead_acid', 19): 995794.3254, ('Lead_acid', 20): 965683.7645,
                         ('Flow', 1): 4706872.908, ('Flow', 2): 3218220.336, ('Flow', 3): 2810526.973,
                         ('Flow', 4): 2555010.035, ('Flow', 5): 2362062.488,
                         ('Flow', 6): 2203531.648,
                         ('Flow', 7): 2067165.77, ('Flow', 8): 1946678.078, ('Flow', 9): 1838520.24,
                         ('Flow', 10): 1740573.662
                         , ('Flow', 11): 1651531.463, ('Flow', 12): 1570567.635,
-                        ('Flow', 13): 1497136.957, ('Flow', 14): 1430839.31, ('Flow', 15): 1371321.436,
-                        # ('Flow', 16): 1318208.673, ('Flow', 17): 1271067.144, ('Flow', 18): 1229396.193,
-                        # ('Flow', 19): 1192645.164, ('Flow', 20): 1160243.518
+                        ('Flow', 13): 1497136.957, ('Flow', 14): 1430839.31, ('Flow', 15): 1371321.436
                         }
     globals()["storage_inv_cost"] = storage_inv_cost
 
@@ -346,44 +340,31 @@ def read_data(database_file, curPath, stages, n_stage, t_per_stage):
 
     # Strategic uncertainty data
 
-    # Different scenarios for PEAK LOAD:
-    # L_max_scenario = {'L': L_max, 'M': {t: 1.05 * L_max[t] for t in L_max}, 'H': {t: 1.2 * L_max[t] for t in L_max}}
-    # # print(L_max_scenario)
-    #
-    # L_max_s = {}
-    # for stage in stages:
-    #     for n in n_stage[stage]:
-    #         for t in t_per_stage[stage]:
-    #             if stage == 1:
-    #                 L_max_s[t, stage, n] = L_max_scenario['M'][t]
-    #             else:
-    #                 m = n[-1]
-    #                 if m == 'L':
-    #                     L_max_s[t, stage, n] = L_max_scenario['L'][t]
-    #                 elif m == 'M':
-    #                     L_max_s[t, stage, n] = L_max_scenario['M'][t]
-    #                 elif m == 'H':
-    #                     L_max_s[t, stage, n] = L_max_scenario['H'][t]
-    # globals()["L_max_s"] = L_max_s
-    # print(L_max_s)
-
     # Different scenarios for CARBON TAX:
-    # tx_CO2_scenario = {'L': 0, 'M': 0.050, 'H': 0.100}
+    # tx_CO2_scenario = {(2, 'L'): 0, (2, 'M'): 0.050, (2, 'H'): 0.100,
+    #                    (3, 'L'): 0, (3, 'M'): 0.065, (3, 'H'): 0.131,
+    #                    (4, 'L'): 0, (4, 'M'): 0.081, (4, 'H'): 0.162,
+    #                    (5, 'L'): 0, (5, 'M'): 0.096, (5, 'H'): 0.192,
+    #                    (6, 'L'): 0, (6, 'M'): 0.112, (6, 'H'): 0.223,
+    #                    (7, 'L'): 0, (7, 'M'): 0.127, (7, 'H'): 0.254,
+    #                    (8, 'L'): 0, (8, 'M'): 0.142, (8, 'H'): 0.285,
+    #                    (9, 'L'): 0, (9, 'M'): 0.158, (9, 'H'): 0.315,
+    #                    (10, 'L'): 0, (10, 'M'): 0.173, (10, 'H'): 0.346,
+    #                    (11, 'L'): 0, (11, 'M'): 0.188, (11, 'H'): 0.377,
+    #                    (12, 'L'): 0, (12, 'M'): 0.204, (12, 'H'): 0.408,
+    #                    (13, 'L'): 0, (13, 'M'): 0.219, (13, 'H'): 0.438,
+    #                    (14, 'L'): 0, (14, 'M'): 0.235, (14, 'H'): 0.469,
+    #                    (15, 'L'): 0, (15, 'M'): 0.250, (15, 'H'): 0.500
+    #                    }
     #
     # tx_CO2 = {}
     # for stage in stages:
-    #     for n in n_stage[stage]:
-    #         for t in t_per_stage[stage]:
-    #             if stage == 1:
-    #                 tx_CO2[t, stage, n] = 0
-    #             else:
-    #                 m = n[-1]
-    #                 if m == 'L':
-    #                     tx_CO2[t, stage, n] = tx_CO2_scenario['L']
-    #                 elif m == 'M':
-    #                     tx_CO2[t, stage, n] = tx_CO2_scenario['M']
-    #                 elif m == 'H':
-    #                     tx_CO2[t, stage, n] = tx_CO2_scenario['H']
+    #     for t in t_per_stage[stage]:
+    #         if stage == 1:
+    #             tx_CO2[t, stage, 'O'] = 0
+    #         else:
+    #             for n in ['L', 'M', 'H']:
+    #                 tx_CO2[t, stage, n] = tx_CO2_scenario[t, n]
     # globals()["tx_CO2"] = tx_CO2
 
     # Different scenarios for NG PRICE:
@@ -401,18 +382,16 @@ def read_data(database_file, curPath, stages, n_stage, t_per_stage):
                           (12, 'L'): 3.496959, (12, 'M'): 4.2411075, (12, 'H'): 6.013945,
                           (13, 'L'): 3.534126, (13, 'M'): 4.3724575, (13, 'H'): 6.17547,
                           (14, 'L'): 3.57645, (14, 'M'): 4.4414835, (14, 'H'): 6.240099,
-                          (15, 'L'): 3.585003, (15, 'M'): 4.47585855, (15, 'H'): 6.41513,
-                          # (16, 'L'): 3.625623, (16, 'M'): 4.5222055, (16, 'H'): 6.499296,
-                          # (17, 'L'): 3.632307, (17, 'M'): 4.60635, (17, 'H'): 6.604871,
-                          # (18, 'L'): 3.635565, (18, 'M'): 4.6283705, (18, 'H'): 6.678832,
-                          # (19, 'L'): 3.647233, (19, 'M'): 4.644157, (19, 'H'): 6.75742,
-                          # (20, 'L'): 3.655489, (20, 'M'): 4.691839, (20, 'H'): 6.742654
+                          (15, 'L'): 3.585003, (15, 'M'): 4.47585855, (15, 'H'): 6.41513
                           }
+    for t in range(1, 16):
+        ng_price_scenarios[t, 'H'] = 1.5 * ng_price_scenarios[t, 'H']
+    print(ng_price_scenarios)
     # min, median and max values from the scenarios of EIA outlook for NG price for electricity
     # https://www.eia.gov/outlooks/aeo/data/browser/#/?id=3-AEO2019&cases=ref2019&sourcekey=0
 
-    th_generators = ['nuc-st-old', 'nuc-st-new', 'coal-st-old1', 'coal-igcc-new', 'coal-igcc-ccs-new', 'ng-ct-old',
-                     'ng-cc-old', 'ng-st-old', 'ng-cc-new', 'ng-cc-ccs-new', 'ng-ct-new']
+    th_generators = ['coal-st-old1', 'coal-igcc-new', 'coal-igcc-ccs-new', 'ng-ct-old',
+                     'ng-cc-old', 'ng-st-old', 'ng-cc-new', 'ng-cc-ccs-new', 'ng-ct-new', 'nuc-st-old', 'nuc-st-new']
     ng_generators = ['ng-ct-old', 'ng-cc-old', 'ng-st-old', 'ng-cc-new', 'ng-cc-ccs-new', 'ng-ct-new']
 
     P_fuel_scenarios = {}
